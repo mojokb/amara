@@ -1,0 +1,53 @@
+*~
+.*.swp
+.swp
+*.log
+.DS_Store
+.vscode/
+.idea/
+.direnv/
+.envrc.local
+.flatpak-builder/
+zig-cache/
+.zig-cache/
+zig-out/
+build-cmake/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+/build.zig.zon.bak
+/result*
+/.nixos-test-history
+example/*.wasm
+test/ghostty
+test/cases/**/*.actual.png
+flatpak/builddir/
+flatpak/repo/
+
+glad.zip
+/Box_test.ppm
+/Box_test_diff.ppm
+/ghostty.qcow2
+
+vgcore.*
+core
+
+# ctags / cscope
+tags
+TAGS
+cscope.out
+cscope.in.out
+cscope.po.out
+
+# Emacs
+\#*\#
+.#*
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# dists
+*.dmg

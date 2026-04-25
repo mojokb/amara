@@ -1,0 +1,12 @@
+import Foundation
+
+/// A single git worktree entry parsed from `git worktree list --porcelain`.
+struct WorktreeEntry: Identifiable, Hashable {
+    let path: String
+    let branch: String
+    let isBare: Bool
+    let isLocked: Bool
+
+    var id: String { path }
+    var name: String { URL(fileURLWithPath: path).lastPathComponent }
+}
