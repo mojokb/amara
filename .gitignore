@@ -23,6 +23,7 @@ CTestTestfile.cmake
 example/*.wasm
 test/ghostty
 test/cases/**/*.actual.png
+test/fuzz-libghostty/.afl-tmin-temp-*
 flatpak/builddir/
 flatpak/repo/
 
