@@ -2,13 +2,21 @@
 set -euo pipefail
 
 # Amara.app DMG Installer Builder
-# Produces: Amara-<version>.dmg (drag-to-Applications)
+# Produces: Amara-<version>.dmg (notarized, drag-to-Applications)
+#
+# Required env var before running:
+#   export APP_PASSWORD="xxxx-xxxx-xxxx-xxxx"  # app-specific password from appleid.apple.com
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$SCRIPT_DIR/macos/build/Release"
 APP_NAME="Amara"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 DIST_DIR="$SCRIPT_DIR/dist"
+ENTITLEMENTS="$SCRIPT_DIR/macos/Ghostty.entitlements"
+
+APPLE_ID="amaramusic@gmail.com"
+TEAM_ID="Q35CCLCGFN"
+APP_PASSWORD="${APP_PASSWORD:?Set APP_PASSWORD to your app-specific password (appleid.apple.com → Security → App Passwords)}"
 
 # ── 1. Release build ──────────────────────────────────────────────────────────
 echo "▶ Building $APP_NAME (Release, arm64 + x86_64)…"
@@ -40,12 +48,67 @@ STAGING_DIR="$DIST_DIR/.dmg-staging-$$"
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
 
-# ── 4. Stage contents ─────────────────────────────────────────────────────────
+# ── 4. Find signing identity ──────────────────────────────────────────────────
+SIGN_IDENTITY=$(security find-identity -v -p codesigning \
+    | grep "Developer ID Application.*$TEAM_ID" \
+    | head -1 \
+    | sed 's/.*"\(.*\)"/\1/')
+
+if [ -z "$SIGN_IDENTITY" ]; then
+    echo "✗ Developer ID Application certificate for team $TEAM_ID not found in keychain."
+    echo "  Download it from https://developer.apple.com/account/resources/certificates/list"
+    exit 1
+fi
+echo "▶ Signing identity: $SIGN_IDENTITY"
+
+# ── 5. Sign app bundle (inside-out) ──────────────────────────────────────────
+echo "▶ Signing app bundle…"
+
+# Sign standalone Mach-O executables first (e.g. Sparkle's Autoupdate binary)
+find "$APP_BUNDLE" -type f -perm +111 | while read -r f; do
+    if file "$f" | grep -q "Mach-O"; then
+        codesign --force --options runtime \
+            --sign "$SIGN_IDENTITY" \
+            --timestamp \
+            "$f"
+    fi
+done
+
+# Sign all bundle types inside-out (deepest path first)
+find "$APP_BUNDLE" \
+    \( -name "*.framework" \
+    -o -name "*.app" \
+    -o -name "*.xpc" \
+    -o -name "*.plugin" \
+    -o -name "*.dylib" \
+    -o -name "*.bundle" \) \
+    | awk '{ print length, $0 }' \
+    | sort -rn \
+    | awk '{print $2}' \
+    | while read -r item; do
+        codesign --force --options runtime \
+            --sign "$SIGN_IDENTITY" \
+            --timestamp \
+            "$item"
+    done
+
+# Sign the app bundle itself with entitlements
+codesign --force --options runtime \
+    --sign "$SIGN_IDENTITY" \
+    --entitlements "$ENTITLEMENTS" \
+    --timestamp \
+    "$APP_BUNDLE"
+
+# Verify
+codesign --verify --deep --strict "$APP_BUNDLE"
+echo "  Signature OK"
+
+# ── 6. Stage contents ─────────────────────────────────────────────────────────
 echo "▶ Staging DMG contents…"
 cp -R "$APP_BUNDLE" "$STAGING_DIR/"
 ln -s /Applications "$STAGING_DIR/Applications"
 
-# ── 5. Create DMG ─────────────────────────────────────────────────────────────
+# ── 7. Create DMG ─────────────────────────────────────────────────────────────
 echo "▶ Creating DMG: $DMG_PATH"
 rm -f "$DMG_PATH"
 
@@ -59,8 +122,22 @@ hdiutil create \
 
 rm -rf "$STAGING_DIR"
 
-# ── 6. Summary ────────────────────────────────────────────────────────────────
+# ── 8. Notarize DMG ──────────────────────────────────────────────────────────
+echo "▶ Submitting to Apple for notarization (this may take a few minutes)…"
+xcrun notarytool submit "$DMG_PATH" \
+    --apple-id "$APPLE_ID" \
+    --password "$APP_PASSWORD" \
+    --team-id "$TEAM_ID" \
+    --wait
+
+# ── 9. Staple notarization ticket ────────────────────────────────────────────
+echo "▶ Stapling notarization ticket…"
+xcrun stapler staple "$DMG_PATH"
+xcrun stapler validate "$DMG_PATH"
+
+# ── 10. Summary ───────────────────────────────────────────────────────────────
 SIZE=$(du -sh "$DMG_PATH" | cut -f1)
 echo ""
 echo "✓ Done: $DMG_PATH ($SIZE)"
+echo "  Notarized and ready for distribution."
 echo "  To install: open the DMG and drag $APP_NAME to Applications."

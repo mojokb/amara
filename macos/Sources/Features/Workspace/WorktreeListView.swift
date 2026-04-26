@@ -8,6 +8,12 @@ struct WorktreeListView: View {
     let error: String?
     let onSelect: (WorktreeEntry) -> Void
     let onRefresh: () -> Void
+    let onCreateWorktree: (String) async throws -> Void
+
+    @State private var showingCreateSheet = false
+    @State private var newBranch = ""
+    @State private var createError: String?
+    @State private var isCreating = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,7 +31,12 @@ struct WorktreeListView: View {
                 list
             }
         }
+        .sheet(isPresented: $showingCreateSheet) {
+            createSheet
+        }
     }
+
+    // MARK: - Header
 
     private var header: some View {
         HStack {
@@ -39,10 +50,19 @@ struct WorktreeListView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+
+            Button(action: { showingCreateSheet = true }) {
+                Image(systemName: "plus")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
     }
+
+    // MARK: - List
 
     private var list: some View {
         ScrollView {
@@ -62,6 +82,70 @@ struct WorktreeListView: View {
             .padding(.vertical, 4)
         }
     }
+
+    // MARK: - Create sheet
+
+    private var createSheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("New Worktree")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Branch name")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("feature/my-branch", text: $newBranch)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { submitCreate() }
+            }
+
+            if let err = createError {
+                Text(err)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    dismissCreate()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Create") {
+                    submitCreate()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(newBranch.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
+            }
+        }
+        .padding(20)
+        .frame(width: 320)
+    }
+
+    private func submitCreate() {
+        let branch = newBranch.trimmingCharacters(in: .whitespaces)
+        guard !branch.isEmpty else { return }
+        isCreating = true
+        createError = nil
+        Task {
+            do {
+                try await onCreateWorktree(branch)
+                dismissCreate()
+            } catch {
+                createError = error.localizedDescription
+            }
+            isCreating = false
+        }
+    }
+
+    private func dismissCreate() {
+        showingCreateSheet = false
+        newBranch = ""
+        createError = nil
+    }
+
+    // MARK: - Empty / error states
 
     private var emptyState: some View {
         VStack(spacing: 8) {
@@ -88,6 +172,8 @@ struct WorktreeListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
+
+// MARK: - Row
 
 private struct WorktreeRowView: View {
     let worktree: WorktreeEntry

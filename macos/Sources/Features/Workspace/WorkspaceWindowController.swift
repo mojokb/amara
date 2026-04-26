@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import Combine
 import AmaraKit
 
 /// A workspace window that shows git worktrees on the left and
@@ -12,6 +13,7 @@ class WorkspaceWindowController: NSWindowController, NSWindowDelegate {
     let manager: WorkspaceManager
 
     private var hostingView: NSHostingView<WorkspaceRootView>?
+    private var titleCancellable: AnyCancellable?
 
     static func newWindow(_ ghostty: Amara.App) -> WorkspaceWindowController {
         let c = WorkspaceWindowController(ghostty: ghostty)
@@ -40,6 +42,34 @@ class WorkspaceWindowController: NSWindowController, NSWindowDelegate {
 
         window.delegate = self
         window.center()
+
+        // Update window title when repo or selected worktree changes.
+        titleCancellable = Publishers.CombineLatest(
+            manager.$repositoryPath,
+            manager.$selectedPath
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] repoPath, selectedPath in
+            guard let window = self?.window else { return }
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+
+            func shortenPath(_ path: String) -> String {
+                path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+            }
+
+            if let selected = selectedPath {
+                let repoName = repoPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Amara"
+                window.title = "\(repoName)  —  \(shortenPath(selected))"
+                window.representedURL = URL(fileURLWithPath: selected)
+            } else if let repo = repoPath {
+                window.title = shortenPath(repo)
+                window.representedURL = URL(fileURLWithPath: repo)
+            } else {
+                window.title = "Amara Workspace"
+                window.representedURL = nil
+            }
+            window.subtitle = ""
+        }
 
         let root = WorkspaceRootView(ghostty: ghostty, manager: manager)
         let hosting = NSHostingView(rootView: root)

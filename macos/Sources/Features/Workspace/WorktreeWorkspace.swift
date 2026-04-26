@@ -24,20 +24,17 @@ final class WorktreeWorkspace: ObservableObject {
     /// Which tab is currently selected in the right panel.
     @Published var activeTab: WorkspaceTab = .claude
 
-    init(path: String, ghosttyApp: ghostty_app_t) {
+    init(path: String, ghosttyApp: ghostty_app_t, claudeCommand: String, codexCommand: String) {
         self.path = path
 
         var claudeConfig = Amara.SurfaceConfiguration()
         claudeConfig.workingDirectory = path
-        claudeConfig.command = "/usr/bin/env claude"
-        let cs = Amara.SurfaceView(ghosttyApp, baseConfig: claudeConfig)
-        // Keep the surface even on error so the terminal can display the failure message.
-        self.claudeSurface = cs
+        claudeConfig.command = claudeCommand
+        self.claudeSurface = Amara.SurfaceView(ghosttyApp, baseConfig: claudeConfig)
 
         var codexConfig = Amara.SurfaceConfiguration()
         codexConfig.workingDirectory = path
-        codexConfig.command = "/usr/bin/env codex"
-        let xs = Amara.SurfaceView(ghosttyApp, baseConfig: codexConfig)
-        self.codexSurface = xs
+        codexConfig.command = codexCommand
+        self.codexSurface = Amara.SurfaceView(ghosttyApp, baseConfig: codexConfig)
     }
 }

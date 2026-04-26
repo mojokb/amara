@@ -351,9 +351,9 @@ class AppDelegate: NSObject,
             // is possible to have other windows in a few scenarios:
             //   - if we're opening a URL since `application(_:openFile:)` is called before this.
             //   - if we're restoring from persisted state
-            if TerminalController.all.isEmpty && derivedConfig.initialWindow {
+            if derivedConfig.initialWindow {
                 undoManager.disableUndoRegistration()
-                _ = TerminalController.newWindow(ghostty)
+                _ = WorkspaceWindowController.newWindow(ghostty)
                 undoManager.enableUndoRegistration()
             }
         }
@@ -446,8 +446,8 @@ class AppDelegate: NSObject,
         // but I haven't seen it happen in releases. I'm unsure why.
         guard applicationHasBecomeActive else { return true }
 
-        // No visible windows, open a new one.
-        _ = TerminalController.newWindow(ghostty)
+        // No visible windows, open the workspace window.
+        _ = WorkspaceWindowController.newWindow(ghostty)
         return false
     }
 
