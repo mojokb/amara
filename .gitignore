@@ -28,6 +28,12 @@ flatpak/builddir/
 flatpak/repo/
 
 glad.zip
+
+# Build artifacts — large binaries not suitable for git
+macos/macos/GhosttyKit.xcframework/**/*.a
+macos/AmaraKit.xcframework/**/*.a
+macos/build/
+dist/
 /Box_test.ppm
 /Box_test_diff.ppm
 /ghostty.qcow2
