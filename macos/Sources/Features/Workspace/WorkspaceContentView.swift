@@ -13,6 +13,8 @@ struct WorkspaceContentView: View {
             WorkspaceTabBar(
                 activeTab: $workspace.activeTab,
                 fileTabs: workspace.fileTabs,
+                claudeNeedsAttention: workspace.claudeNeedsAttention,
+                codexNeedsAttention: workspace.codexNeedsAttention,
                 onClose: closeFile
             )
 

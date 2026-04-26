@@ -72,6 +72,14 @@ struct WorkspaceRootView: View {
         return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
     }
 
+    // MARK: - Attention state
+
+    private var needsAttentionPaths: Set<String> {
+        Set(manager.workspaces.values
+            .filter { $0.claudeNeedsAttention || $0.codexNeedsAttention }
+            .map { $0.path })
+    }
+
     // MARK: - Left panel
 
     private var leftPanel: some View {
@@ -82,6 +90,7 @@ struct WorkspaceRootView: View {
                     selectedPath: manager.selectedPath,
                     isLoading: manager.worktreeProvider.isLoading,
                     error: manager.worktreeProvider.error,
+                    needsAttentionPaths: needsAttentionPaths,
                     onSelect: { manager.select(path: $0.path) },
                     onRefresh: manager.refreshWorktrees,
                     onCreateWorktree: { try await manager.createWorktree(branch: $0) }

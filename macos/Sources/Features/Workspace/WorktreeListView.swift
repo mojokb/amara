@@ -6,6 +6,8 @@ struct WorktreeListView: View {
     let selectedPath: String?
     let isLoading: Bool
     let error: String?
+    /// Paths of worktrees that have at least one agent with new activity.
+    let needsAttentionPaths: Set<String>
     let onSelect: (WorktreeEntry) -> Void
     let onRefresh: () -> Void
     let onCreateWorktree: (String) async throws -> Void
@@ -70,7 +72,8 @@ struct WorktreeListView: View {
                 ForEach(worktrees) { worktree in
                     WorktreeRowView(
                         worktree: worktree,
-                        isSelected: worktree.path == selectedPath
+                        isSelected: worktree.path == selectedPath,
+                        needsAttention: needsAttentionPaths.contains(worktree.path)
                     )
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -178,6 +181,7 @@ struct WorktreeListView: View {
 private struct WorktreeRowView: View {
     let worktree: WorktreeEntry
     let isSelected: Bool
+    let needsAttention: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -200,7 +204,11 @@ private struct WorktreeRowView: View {
 
             Spacer()
 
-            if worktree.isLocked {
+            if needsAttention {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 7, height: 7)
+            } else if worktree.isLocked {
                 Image(systemName: "lock.fill")
                     .font(.caption2)
                     .foregroundStyle(.secondary)

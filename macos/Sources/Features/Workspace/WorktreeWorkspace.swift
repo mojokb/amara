@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import AmaraKit
 
 /// Per-worktree state: agent surfaces and file editor tabs.
@@ -24,6 +25,19 @@ final class WorktreeWorkspace: ObservableObject {
     /// Which tab is currently selected in the right panel.
     @Published var activeTab: WorkspaceTab = .claude
 
+    /// True when the claude surface has new activity while its tab is not active.
+    @Published private(set) var claudeNeedsAttention: Bool = false
+
+    /// True when the codex surface has new activity while its tab is not active.
+    @Published private(set) var codexNeedsAttention: Bool = false
+
+    private var cancellables: Set<AnyCancellable> = []
+
+    // Ignore surface events for a short window after creation to avoid
+    // flagging startup chatter (initial title set, pwd resolved, etc.).
+    private let createdAt = Date()
+    private let gracePeriod: TimeInterval = 2.5
+
     init(path: String, ghosttyApp: ghostty_app_t, claudeCommand: String, codexCommand: String) {
         self.path = path
 
@@ -36,5 +50,42 @@ final class WorktreeWorkspace: ObservableObject {
         codexConfig.workingDirectory = path
         codexConfig.command = codexCommand
         self.codexSurface = Amara.SurfaceView(ghosttyApp, baseConfig: codexConfig)
+
+        setupAttentionTracking()
+    }
+
+    // MARK: - Attention tracking
+
+    private func setupAttentionTracking() {
+        // Clear attention flag whenever the user activates that tab.
+        $activeTab
+            .receive(on: RunLoop.main)
+            .sink { [weak self] tab in
+                switch tab {
+                case .claude: self?.claudeNeedsAttention = false
+                case .codex:  self?.codexNeedsAttention  = false
+                case .file:   break
+                }
+            }
+            .store(in: &cancellables)
+
+        // Raise attention flag when a surface emits any published-property change
+        // while its tab is not the active one. objectWillChange fires for title
+        // updates, pwd (OSC 7 shell integration), bell, progress reports, etc.
+        claudeSurface.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, Date().timeIntervalSince(self.createdAt) > self.gracePeriod else { return }
+                if self.activeTab != .claude { self.claudeNeedsAttention = true }
+            }
+            .store(in: &cancellables)
+
+        codexSurface.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, Date().timeIntervalSince(self.createdAt) > self.gracePeriod else { return }
+                if self.activeTab != .codex { self.codexNeedsAttention = true }
+            }
+            .store(in: &cancellables)
     }
 }
