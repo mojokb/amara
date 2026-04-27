@@ -16,6 +16,7 @@ struct WorktreeListView: View {
     @State private var newBranch = ""
     @State private var createError: String?
     @State private var isCreating = false
+    @State private var expandedPaths: Set<String> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -70,14 +71,33 @@ struct WorktreeListView: View {
         ScrollView {
             LazyVStack(spacing: 2) {
                 ForEach(worktrees) { worktree in
-                    WorktreeRowView(
-                        worktree: worktree,
-                        isSelected: worktree.path == selectedPath,
-                        needsAttention: needsAttentionPaths.contains(worktree.path)
-                    )
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if !worktree.isBare { onSelect(worktree) }
+                    VStack(spacing: 0) {
+                        WorktreeRowView(
+                            worktree: worktree,
+                            isSelected: worktree.path == selectedPath,
+                            needsAttention: needsAttentionPaths.contains(worktree.path),
+                            isExpanded: expandedPaths.contains(worktree.path)
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            guard !worktree.isBare else { return }
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                if expandedPaths.contains(worktree.path) {
+                                    expandedPaths.remove(worktree.path)
+                                } else {
+                                    expandedPaths.insert(worktree.path)
+                                }
+                            }
+                        }
+                        .onTapGesture(count: 1) {
+                            if !worktree.isBare { onSelect(worktree) }
+                        }
+
+                        if expandedPaths.contains(worktree.path) {
+                            WorktreeFileBrowser(rootPath: worktree.path)
+                                .padding(.bottom, 4)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
                     }
                     .padding(.horizontal, 6)
                 }
@@ -182,9 +202,16 @@ private struct WorktreeRowView: View {
     let worktree: WorktreeEntry
     let isSelected: Bool
     let needsAttention: Bool
+    let isExpanded: Bool
 
     var body: some View {
         HStack(spacing: 8) {
+            // Expand/collapse disclosure chevron
+            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(worktree.isBare ? Color.clear : Color.secondary.opacity(0.5))
+                .frame(width: 8)
+
             Image(systemName: "arrow.triangle.branch")
                 .font(.caption)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
