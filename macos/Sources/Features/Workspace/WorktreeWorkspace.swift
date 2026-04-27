@@ -34,6 +34,7 @@ final class WorktreeWorkspace: ObservableObject {
     @Published private(set) var codexNeedsAttention: Bool = false
 
     private var cancellables: Set<AnyCancellable> = []
+    private var fileSurfaceCancellables: [URL: AnyCancellable] = [:]
 
     // Screen content hashes — updated every poll cycle
     private var claudeLastHash: Int = 0
@@ -85,12 +86,26 @@ final class WorktreeWorkspace: ObservableObject {
         fileSurfaces[url] = surface
         fileTabs.append(url)
         activeTab = .file(url)
+
+        // Auto-close the tab when the vim process exits.
+        fileSurfaceCancellables[url] = surface.$childExitedMessage
+            .receive(on: RunLoop.main)
+            .compactMap { $0 }
+            .first()
+            .sink { [weak self] _ in self?.removeFileTab(url) }
     }
 
     func closeFile(_ url: URL) {
         if let model = fileSurfaces[url]?.surfaceModel {
             Task { @MainActor in model.sendText(":q!\n") }
         }
+        // Tab removal happens via the childExitedMessage subscription above,
+        // but if the user force-closes before vim exits we do it immediately.
+        removeFileTab(url)
+    }
+
+    private func removeFileTab(_ url: URL) {
+        fileSurfaceCancellables.removeValue(forKey: url)
         fileSurfaces.removeValue(forKey: url)
         fileTabs.removeAll { $0 == url }
         if activeTab == .file(url) {
