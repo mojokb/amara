@@ -28,6 +28,16 @@ final class WorkspaceManager: ObservableObject {
         return workspaces[path]
     }
 
+    /// The ghostty surface currently visible in the active tab of the selected worktree.
+    var activeSurface: ghostty_surface_t? {
+        guard let ws = selectedWorkspace else { return nil }
+        switch ws.activeTab {
+        case .claude:        return ws.claudeSurface.surface
+        case .codex:         return ws.codexSurface.surface
+        case .file(let url): return ws.fileSurfaces[url]?.surface
+        }
+    }
+
     private var providerCancellable: AnyCancellable?
     // One cancellable per live workspace — forwards attention-state changes up to
     // WorkspaceManager so WorkspaceRootView re-renders the sidebar dots.

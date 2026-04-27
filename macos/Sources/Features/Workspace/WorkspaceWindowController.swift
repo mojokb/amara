@@ -14,6 +14,7 @@ class WorkspaceWindowController: NSWindowController, NSWindowDelegate {
 
     private var hostingView: NSHostingView<WorkspaceRootView>?
     private var titleCancellable: AnyCancellable?
+    private var zoomEventMonitor: Any?
 
     static func newWindow(_ ghostty: Amara.App) -> WorkspaceWindowController {
         let c = WorkspaceWindowController(ghostty: ghostty)
@@ -77,6 +78,11 @@ class WorkspaceWindowController: NSWindowController, NSWindowDelegate {
         hosting.autoresizingMask = [.width, .height]
         window.contentView?.addSubview(hosting)
         self.hostingView = hosting
+
+        zoomEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            return MainActor.assumeIsolated { self.handleZoomKey(event) }
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -86,6 +92,29 @@ class WorkspaceWindowController: NSWindowController, NSWindowDelegate {
     // MARK: NSWindowDelegate
 
     func windowWillClose(_ notification: Notification) {
-        // Surface cleanup is handled by WorktreeWorkspace deinit via ARC.
+        if let m = zoomEventMonitor { NSEvent.removeMonitor(m); zoomEventMonitor = nil }
+    }
+
+    // MARK: - Zoom
+
+    @MainActor
+    private func handleZoomKey(_ event: NSEvent) -> NSEvent? {
+        guard window?.isKeyWindow == true else { return event }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags.contains(.command) else { return event }
+
+        let key = event.charactersIgnoringModifiers ?? ""
+        let action: String
+        if flags.contains(.shift) && key == "=" {
+            action = "increase_font_size:1"
+        } else if key == "-" {
+            action = "decrease_font_size:1"
+        } else {
+            return event
+        }
+
+        guard let surface = manager.activeSurface else { return event }
+        ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))
+        return nil
     }
 }
