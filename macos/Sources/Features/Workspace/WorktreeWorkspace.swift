@@ -24,6 +24,9 @@ final class WorktreeWorkspace: ObservableObject {
     /// Surface per open file URL.
     @Published var fileSurfaces: [URL: Amara.SurfaceView] = [:]
 
+    /// For markdown files: true = viewer, false = vim editor. Defaults to viewer.
+    @Published var markdownViewModes: [URL: Bool] = [:]
+
     /// Which tab is currently selected in the right panel.
     @Published var activeTab: WorkspaceTab = .claude
 
@@ -74,10 +77,21 @@ final class WorktreeWorkspace: ObservableObject {
 
     // MARK: - File editor
 
+    func isViewingMarkdown(_ url: URL) -> Bool {
+        markdownViewModes[url] ?? true
+    }
+
+    func toggleMarkdownMode(for url: URL) {
+        markdownViewModes[url] = !isViewingMarkdown(url)
+    }
+
     func openFile(_ url: URL) {
         if fileSurfaces[url] != nil {
             activeTab = .file(url)
             return
+        }
+        if url.pathExtension.lowercased() == "md" {
+            markdownViewModes[url] = true
         }
         var config = Amara.SurfaceConfiguration()
         config.workingDirectory = path
@@ -107,6 +121,7 @@ final class WorktreeWorkspace: ObservableObject {
     private func removeFileTab(_ url: URL) {
         fileSurfaceCancellables.removeValue(forKey: url)
         fileSurfaces.removeValue(forKey: url)
+        markdownViewModes.removeValue(forKey: url)
         fileTabs.removeAll { $0 == url }
         if activeTab == .file(url) {
             activeTab = fileTabs.last.map { .file($0) } ?? .claude

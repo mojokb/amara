@@ -30,12 +30,46 @@ struct WorkspaceContentView: View {
                 // File editor tabs
                 ForEach(workspace.fileTabs, id: \.self) { url in
                     if let surface = workspace.fileSurfaces[url] {
+                        let isActive = workspace.activeTab == .file(url)
+                        let isMarkdown = url.pathExtension.lowercased() == "md"
+                        let viewing = workspace.isViewingMarkdown(url)
+
+                        // vim surface — kept alive even when markdown viewer is showing
                         Amara.InspectableSurface(surfaceView: surface)
-                            .surfaceVisible(workspace.activeTab == .file(url))
+                            .surfaceVisible(isActive && !(isMarkdown && viewing))
+
+                        // markdown viewer — overlaid when in viewer mode
+                        if isMarkdown {
+                            MarkdownViewerView(fileURL: url)
+                                .opacity(isActive && viewing ? 1 : 0)
+                                .allowsHitTesting(isActive && viewing)
+                                .accessibilityHidden(!(isActive && viewing))
+                        }
                     }
                 }
             }
+            .overlay(alignment: .topTrailing) { markdownToggleButton }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    // MARK: - Markdown toggle
+
+    @ViewBuilder
+    private var markdownToggleButton: some View {
+        if case .file(let url) = workspace.activeTab,
+           url.pathExtension.lowercased() == "md" {
+            let viewing = workspace.isViewingMarkdown(url)
+            Button { workspace.toggleMarkdownMode(for: url) } label: {
+                Label(viewing ? "Edit" : "Preview",
+                      systemImage: viewing ? "pencil" : "doc.richtext")
+                    .font(.system(size: 11))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.regularMaterial, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(8)
         }
     }
 
