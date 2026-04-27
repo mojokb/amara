@@ -25,18 +25,32 @@ final class WorktreeWorkspace: ObservableObject {
     /// Which tab is currently selected in the right panel.
     @Published var activeTab: WorkspaceTab = .claude
 
-    /// True when the claude surface has new activity while its tab is not active.
+    /// True when the claude surface went idle after producing output (waiting for user input).
     @Published private(set) var claudeNeedsAttention: Bool = false
 
-    /// True when the codex surface has new activity while its tab is not active.
+    /// True when the codex surface went idle after producing output (waiting for user input).
     @Published private(set) var codexNeedsAttention: Bool = false
 
     private var cancellables: Set<AnyCancellable> = []
 
-    // Ignore surface events for a short window after creation to avoid
-    // flagging startup chatter (initial title set, pwd resolved, etc.).
+    // Screen content hashes — updated every poll cycle
+    private var claudeLastHash: Int = 0
+    private var codexLastHash:  Int = 0
+
+    // Timers that fire when content stabilises (agent went idle)
+    private var claudeIdleTimer: Timer?
+    private var codexIdleTimer:  Timer?
+
+    // Repeating timer that reads surface content hashes
+    private var pollTimer: Timer?
+
+    // How long content must be stable before we consider the agent idle.
+    private let idleThreshold: TimeInterval = 2.5
+
+    // Grace period: ignore the first few seconds after a workspace is created
+    // to suppress PTY startup chatter.
     private let createdAt = Date()
-    private let gracePeriod: TimeInterval = 2.5
+    private let gracePeriod: TimeInterval = 3.0
 
     init(path: String, ghosttyApp: ghostty_app_t, claudeCommand: String, codexCommand: String) {
         self.path = path
@@ -54,38 +68,112 @@ final class WorktreeWorkspace: ObservableObject {
         setupAttentionTracking()
     }
 
+    deinit {
+        pollTimer?.invalidate()
+        claudeIdleTimer?.invalidate()
+        codexIdleTimer?.invalidate()
+    }
+
     // MARK: - Attention tracking
 
     private func setupAttentionTracking() {
-        // Clear attention flag whenever the user activates that tab.
+        // When the user activates a tab: clear its attention flag, cancel its
+        // idle timer, and snapshot the current content so the next poll has a
+        // fresh baseline to diff against.
         $activeTab
             .receive(on: RunLoop.main)
             .sink { [weak self] tab in
+                guard let self else { return }
                 switch tab {
-                case .claude: self?.claudeNeedsAttention = false
-                case .codex:  self?.codexNeedsAttention  = false
-                case .file:   break
+                case .claude:
+                    self.claudeIdleTimer?.invalidate()
+                    self.claudeIdleTimer = nil
+                    self.claudeNeedsAttention = false
+                    self.claudeLastHash = self.claudeSurface.cachedVisibleContents.get().hashValue
+                case .codex:
+                    self.codexIdleTimer?.invalidate()
+                    self.codexIdleTimer = nil
+                    self.codexNeedsAttention = false
+                    self.codexLastHash = self.codexSurface.cachedVisibleContents.get().hashValue
+                case .file:
+                    break
                 }
             }
             .store(in: &cancellables)
 
-        // Raise attention flag when a surface emits any published-property change
-        // while its tab is not the active one. objectWillChange fires for title
-        // updates, pwd (OSC 7 shell integration), bell, progress reports, etc.
-        claudeSurface.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                guard let self, Date().timeIntervalSince(self.createdAt) > self.gracePeriod else { return }
-                if self.activeTab != .claude { self.claudeNeedsAttention = true }
-            }
-            .store(in: &cancellables)
+        // Poll visible screen content for both surfaces every second.
+        // On each tick we compare the new hash to the previous one:
+        //   • hash changed  → agent is still producing output; reset the idle
+        //                     timer and clear any pending attention flag.
+        //   • hash unchanged → content has stabilised; the idle timer (started
+        //                     on the last change) will fire after idleThreshold
+        //                     seconds and set needsAttention.
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.pollSurfaces()
+        }
+    }
 
-        codexSurface.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                guard let self, Date().timeIntervalSince(self.createdAt) > self.gracePeriod else { return }
-                if self.activeTab != .codex { self.codexNeedsAttention = true }
+    private func pollSurfaces() {
+        guard Date().timeIntervalSince(createdAt) > gracePeriod else { return }
+        pollSurface(.claude)
+        pollSurface(.codex)
+    }
+
+    private func pollSurface(_ tab: WorkspaceTab) {
+        // No need to track content while the user is looking at it.
+        guard activeTab != tab else { return }
+
+        let surface: Amara.SurfaceView
+        switch tab {
+        case .claude: surface = claudeSurface
+        case .codex:  surface = codexSurface
+        default:      return
+        }
+
+        let newHash = surface.cachedVisibleContents.get().hashValue
+        let prevHash: Int
+        switch tab {
+        case .claude: prevHash = claudeLastHash
+        case .codex:  prevHash = codexLastHash
+        default:      return
+        }
+
+        // Store updated hash
+        switch tab {
+        case .claude: claudeLastHash = newHash
+        case .codex:  codexLastHash  = newHash
+        default: break
+        }
+
+        guard newHash != prevHash else {
+            // Content unchanged — idle timer (if any) is already counting down.
+            return
+        }
+
+        // Content changed → agent is still producing output.
+        // Restart the idle timer and clear any dot that may have been set.
+        switch tab {
+        case .claude:
+            claudeIdleTimer?.invalidate()
+            claudeNeedsAttention = false
+            claudeIdleTimer = Timer.scheduledTimer(
+                withTimeInterval: idleThreshold, repeats: false
+            ) { [weak self] _ in
+                guard let self, self.activeTab != .claude else { return }
+                self.claudeNeedsAttention = true
+                self.claudeIdleTimer = nil
             }
-            .store(in: &cancellables)
+        case .codex:
+            codexIdleTimer?.invalidate()
+            codexNeedsAttention = false
+            codexIdleTimer = Timer.scheduledTimer(
+                withTimeInterval: idleThreshold, repeats: false
+            ) { [weak self] _ in
+                guard let self, self.activeTab != .codex else { return }
+                self.codexNeedsAttention = true
+                self.codexIdleTimer = nil
+            }
+        default: break
+        }
     }
 }

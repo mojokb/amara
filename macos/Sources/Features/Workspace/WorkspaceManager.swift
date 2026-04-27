@@ -29,6 +29,9 @@ final class WorkspaceManager: ObservableObject {
     }
 
     private var providerCancellable: AnyCancellable?
+    // One cancellable per live workspace — forwards attention-state changes up to
+    // WorkspaceManager so WorkspaceRootView re-renders the sidebar dots.
+    private var workspaceCancellables: [String: AnyCancellable] = [:]
 
     init(ghostty: Amara.App) {
         self.ghostty = ghostty
@@ -48,18 +51,25 @@ final class WorkspaceManager: ObservableObject {
             // invocation so PATH is sourced from the user's shell config.
             let claudeCmd = resolver.claudeCommand ?? "/bin/zsh -l -c 'source ~/.zshrc 2>/dev/null; exec claude'"
             let codexCmd  = resolver.codexCommand  ?? "/bin/zsh -l -c 'source ~/.zshrc 2>/dev/null; exec codex'"
-            workspaces[path] = WorktreeWorkspace(
+            let workspace = WorktreeWorkspace(
                 path: path,
                 ghosttyApp: app,
                 claudeCommand: claudeCmd,
                 codexCommand: codexCmd
             )
+            workspaces[path] = workspace
+            // Forward workspace-level changes (e.g. attention flags) so SwiftUI
+            // views that observe WorkspaceManager re-render the sidebar.
+            workspaceCancellables[path] = workspace.objectWillChange
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in self?.objectWillChange.send() }
         }
         selectedPath = path
     }
 
     func remove(path: String) {
         workspaces.removeValue(forKey: path)
+        workspaceCancellables.removeValue(forKey: path)
         if selectedPath == path {
             selectedPath = workspaces.keys.first
         }
