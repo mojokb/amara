@@ -93,7 +93,8 @@ struct WorkspaceRootView: View {
                     needsAttentionPaths: needsAttentionPaths,
                     onSelect: { manager.select(path: $0.path) },
                     onRefresh: manager.refreshWorktrees,
-                    onCreateWorktree: { try await manager.createWorktree(branch: $0) }
+                    onCreateWorktree: { try await manager.createWorktree(branch: $0) },
+                    onOpenFile: { manager.openFile($0, inWorktreePath: $1) }
                 )
             } else {
                 noRepositoryPanel

@@ -16,6 +16,8 @@ final class WorktreeWorkspace: ObservableObject {
     /// The surface running `codex` in this worktree.
     let codexSurface: Amara.SurfaceView
 
+    private let ghosttyApp: ghostty_app_t
+
     /// Ordered list of open file URLs (editor tabs).
     @Published var fileTabs: [URL] = []
 
@@ -54,6 +56,7 @@ final class WorktreeWorkspace: ObservableObject {
 
     init(path: String, ghosttyApp: ghostty_app_t, claudeCommand: String, codexCommand: String) {
         self.path = path
+        self.ghosttyApp = ghosttyApp
 
         var claudeConfig = Amara.SurfaceConfiguration()
         claudeConfig.workingDirectory = path
@@ -66,6 +69,37 @@ final class WorktreeWorkspace: ObservableObject {
         self.codexSurface = Amara.SurfaceView(ghosttyApp, baseConfig: codexConfig)
 
         setupAttentionTracking()
+    }
+
+    // MARK: - File editor
+
+    func openFile(_ url: URL) {
+        if fileSurfaces[url] != nil {
+            activeTab = .file(url)
+            return
+        }
+        var config = Amara.SurfaceConfiguration()
+        config.workingDirectory = path
+        config.command = "/usr/bin/vim " + shellEscape(url.path)
+        let surface = Amara.SurfaceView(ghosttyApp, baseConfig: config)
+        fileSurfaces[url] = surface
+        fileTabs.append(url)
+        activeTab = .file(url)
+    }
+
+    func closeFile(_ url: URL) {
+        if let model = fileSurfaces[url]?.surfaceModel {
+            Task { @MainActor in model.sendText(":q!\n") }
+        }
+        fileSurfaces.removeValue(forKey: url)
+        fileTabs.removeAll { $0 == url }
+        if activeTab == .file(url) {
+            activeTab = fileTabs.last.map { .file($0) } ?? .claude
+        }
+    }
+
+    private func shellEscape(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     deinit {

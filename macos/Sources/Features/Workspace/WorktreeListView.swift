@@ -11,6 +11,8 @@ struct WorktreeListView: View {
     let onSelect: (WorktreeEntry) -> Void
     let onRefresh: () -> Void
     let onCreateWorktree: (String) async throws -> Void
+    /// Called when a file is tapped in the file browser. Args: (fileURL, worktreePath).
+    let onOpenFile: (URL, String) -> Void
 
     @State private var showingCreateSheet = false
     @State private var newBranch = ""
@@ -141,8 +143,10 @@ struct WorktreeListView: View {
 
             Divider()
 
-            WorktreeFileBrowser(rootPath: entry.path)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            WorktreeFileBrowser(rootPath: entry.path) { url in
+                onOpenFile(url, entry.path)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

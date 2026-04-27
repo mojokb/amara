@@ -3,6 +3,7 @@ import SwiftUI
 /// Expandable file-tree panel shown below a worktree row on double-click.
 struct WorktreeFileBrowser: View {
     let rootPath: String
+    var onOpenFile: ((URL) -> Void)? = nil
 
     @State private var rootEntries: [FileBrowserEntry] = []
 
@@ -10,7 +11,7 @@ struct WorktreeFileBrowser: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(rootEntries) { entry in
-                    FileBrowserNode(entry: entry, depth: 0)
+                    FileBrowserNode(entry: entry, depth: 0, onOpenFile: onOpenFile)
                 }
             }
             .padding(.vertical, 4)
@@ -28,16 +29,18 @@ struct WorktreeFileBrowser: View {
 private struct FileBrowserNode: View {
     let entry: FileBrowserEntry
     let depth: Int
+    let onOpenFile: ((URL) -> Void)?
 
     @State private var isExpanded = false
     @State private var children: [FileBrowserEntry] = []
+    @State private var isHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             rowView
             if isExpanded {
                 ForEach(children) { child in
-                    FileBrowserNode(entry: child, depth: depth + 1)
+                    FileBrowserNode(entry: child, depth: depth + 1, onOpenFile: onOpenFile)
                 }
             }
         }
@@ -51,7 +54,7 @@ private struct FileBrowserNode: View {
             if entry.isDirectory {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 8)
             } else {
                 Color.clear.frame(width: 8)
@@ -72,14 +75,17 @@ private struct FileBrowserNode: View {
         }
         .padding(.vertical, 2)
         .padding(.horizontal, 6)
+        .background(isHovered ? Color.primary.opacity(0.07) : Color.clear)
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
         .onTapGesture {
-            guard entry.isDirectory else { return }
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isExpanded.toggle()
-            }
-            if isExpanded && children.isEmpty {
-                children = FileBrowserEntry.children(of: entry.path)
+            if entry.isDirectory {
+                withAnimation(.easeInOut(duration: 0.15)) { isExpanded.toggle() }
+                if isExpanded && children.isEmpty {
+                    children = FileBrowserEntry.children(of: entry.path)
+                }
+            } else {
+                onOpenFile?(URL(fileURLWithPath: entry.path))
             }
         }
     }

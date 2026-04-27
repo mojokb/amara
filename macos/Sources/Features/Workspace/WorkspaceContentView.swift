@@ -42,8 +42,7 @@ struct WorkspaceContentView: View {
     // MARK: - Helpers
 
     private func closeFile(_ url: URL) {
-        // Ask vim to quit gracefully; the surface closes itself via PTY exit.
-        workspace.fileSurfaces[url]?.surfaceModel?.sendText(":q\n")
+        workspace.closeFile(url)
     }
 }
 

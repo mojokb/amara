@@ -75,6 +75,17 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
+    // MARK: - File editor
+
+    func openFile(_ url: URL, inWorktreePath worktreePath: String) {
+        // Ensure the workspace for this worktree exists (creates it if needed).
+        if workspaces[worktreePath] == nil {
+            select(path: worktreePath)
+        }
+        workspaces[worktreePath]?.openFile(url)
+        selectedPath = worktreePath
+    }
+
     // MARK: - Repository
 
     func setRepository(path: String) {
