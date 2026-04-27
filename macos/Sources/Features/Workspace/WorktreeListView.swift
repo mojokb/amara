@@ -16,11 +16,34 @@ struct WorktreeListView: View {
     @State private var newBranch = ""
     @State private var createError: String?
     @State private var isCreating = false
-    @State private var expandedPaths: Set<String> = []
+
+    /// Non-nil while the file browser panel is shown for a worktree.
+    @State private var fileBrowserEntry: WorktreeEntry? = nil
 
     var body: some View {
+        ZStack {
+            // Worktree list (slides left when file browser opens)
+            listPanel
+                .offset(x: fileBrowserEntry == nil ? 0 : -20)
+                .opacity(fileBrowserEntry == nil ? 1 : 0)
+
+            // File browser panel (slides in from the right)
+            if let entry = fileBrowserEntry {
+                fileBrowserPanel(for: entry)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: fileBrowserEntry?.path)
+        .sheet(isPresented: $showingCreateSheet) {
+            createSheet
+        }
+    }
+
+    // MARK: - List panel
+
+    private var listPanel: some View {
         VStack(spacing: 0) {
-            header
+            listHeader
             Divider()
 
             if isLoading {
@@ -34,14 +57,9 @@ struct WorktreeListView: View {
                 list
             }
         }
-        .sheet(isPresented: $showingCreateSheet) {
-            createSheet
-        }
     }
 
-    // MARK: - Header
-
-    private var header: some View {
+    private var listHeader: some View {
         HStack {
             Text("WORKTREES")
                 .font(.system(size: 10, weight: .semibold))
@@ -65,44 +83,66 @@ struct WorktreeListView: View {
         .padding(.vertical, 8)
     }
 
-    // MARK: - List
-
     private var list: some View {
         ScrollView {
             LazyVStack(spacing: 2) {
                 ForEach(worktrees) { worktree in
-                    VStack(spacing: 0) {
-                        WorktreeRowView(
-                            worktree: worktree,
-                            isSelected: worktree.path == selectedPath,
-                            needsAttention: needsAttentionPaths.contains(worktree.path),
-                            isExpanded: expandedPaths.contains(worktree.path)
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 2) {
-                            guard !worktree.isBare else { return }
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                if expandedPaths.contains(worktree.path) {
-                                    expandedPaths.remove(worktree.path)
-                                } else {
-                                    expandedPaths.insert(worktree.path)
-                                }
-                            }
+                    WorktreeRowView(
+                        worktree: worktree,
+                        isSelected: worktree.path == selectedPath,
+                        needsAttention: needsAttentionPaths.contains(worktree.path)
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        guard !worktree.isBare else { return }
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            fileBrowserEntry = worktree
                         }
-                        .onTapGesture(count: 1) {
-                            if !worktree.isBare { onSelect(worktree) }
-                        }
-
-                        if expandedPaths.contains(worktree.path) {
-                            WorktreeFileBrowser(rootPath: worktree.path)
-                                .padding(.bottom, 4)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                        }
+                    }
+                    .onTapGesture(count: 1) {
+                        if !worktree.isBare { onSelect(worktree) }
                     }
                     .padding(.horizontal, 6)
                 }
             }
             .padding(.vertical, 4)
+        }
+    }
+
+    // MARK: - File browser panel
+
+    private func fileBrowserPanel(for entry: WorktreeEntry) -> some View {
+        VStack(spacing: 0) {
+            // Header: back button + worktree name
+            HStack(spacing: 6) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        fileBrowserEntry = nil
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text(entry.name)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            WorktreeFileBrowser(rootPath: entry.path)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -130,16 +170,11 @@ struct WorktreeListView: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") {
-                    dismissCreate()
-                }
-                .keyboardShortcut(.cancelAction)
-
-                Button("Create") {
-                    submitCreate()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(newBranch.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
+                Button("Cancel") { dismissCreate() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Create") { submitCreate() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(newBranch.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
             }
         }
         .padding(20)
@@ -202,16 +237,9 @@ private struct WorktreeRowView: View {
     let worktree: WorktreeEntry
     let isSelected: Bool
     let needsAttention: Bool
-    let isExpanded: Bool
 
     var body: some View {
         HStack(spacing: 8) {
-            // Expand/collapse disclosure chevron
-            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(worktree.isBare ? Color.clear : Color.secondary.opacity(0.5))
-                .frame(width: 8)
-
             Image(systemName: "arrow.triangle.branch")
                 .font(.caption)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)

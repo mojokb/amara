@@ -15,9 +15,8 @@ struct WorktreeFileBrowser: View {
             }
             .padding(.vertical, 4)
         }
-        .frame(maxHeight: 220)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(NSColor.controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 5))
         .onAppear {
             rootEntries = FileBrowserEntry.children(of: rootPath)
         }
