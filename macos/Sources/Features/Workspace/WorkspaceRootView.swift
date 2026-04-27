@@ -35,36 +35,34 @@ struct WorkspaceRootView: View {
     // MARK: - Status bar
 
     private var statusBar: some View {
-        Divider()
-            .overlay(alignment: .bottom) {
-                HStack(spacing: 12) {
-                    // Repo path
-                    if let repo = manager.repositoryPath {
-                        Label(shortenPath(repo), systemImage: "folder")
-                            .lineLimit(1)
-                    }
-
-                    // Active worktree branch
-                    if let selected = manager.selectedPath,
-                       let entry = manager.worktreeProvider.worktrees.first(where: { $0.path == selected }) {
-                        Divider().frame(height: 12)
-                        Label(entry.branch, systemImage: "arrow.triangle.branch")
-                            .lineLimit(1)
-                        Divider().frame(height: 12)
-                        Label(shortenPath(selected), systemImage: "internaldrive")
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-
-                    Spacer()
-                }
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity)
-                .background(.bar)
+        HStack(spacing: 12) {
+            // Repo path
+            if let repo = manager.repositoryPath {
+                Label(shortenPath(repo), systemImage: "folder")
+                    .lineLimit(1)
             }
+
+            // Active worktree branch
+            if let selected = manager.selectedPath,
+               let entry = manager.worktreeProvider.worktrees.first(where: { $0.path == selected }) {
+                Divider().frame(height: 12)
+                Label(entry.branch, systemImage: "arrow.triangle.branch")
+                    .lineLimit(1)
+                Divider().frame(height: 12)
+                Label(shortenPath(selected), systemImage: "internaldrive")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
     }
 
     private func shortenPath(_ path: String) -> String {
