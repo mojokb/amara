@@ -40,6 +40,10 @@ final class WorkspaceManager: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
         resolver.resolve()
+
+        worktreeProvider.onPRMerged = { [weak self] entry in
+            self?.handlePRMerged(entry)
+        }
     }
 
     // MARK: - Selection
@@ -111,6 +115,27 @@ final class WorkspaceManager: ObservableObject {
             try Self.gitWorktreeAdd(repoPath: repoPath, branch: branch, worktreePath: worktreePath)
         }.value
         worktreeProvider.refresh(for: repoPath)
+    }
+
+    // MARK: - PR merge handling
+
+    private func handlePRMerged(_ entry: WorktreeEntry) {
+        guard let repoPath = repositoryPath else { return }
+        remove(path: entry.path)
+        worktreeProvider.refresh(for: repoPath)
+        Task.detached(priority: .utility) {
+            Self.gitWorktreeRemove(repoPath: repoPath, worktreePath: entry.path)
+        }
+    }
+
+    private nonisolated static func gitWorktreeRemove(repoPath: String, worktreePath: String) {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        proc.arguments = ["-C", repoPath, "worktree", "remove", "--force", worktreePath]
+        proc.standardOutput = Pipe()
+        proc.standardError = Pipe()
+        try? proc.run()
+        proc.waitUntilExit()
     }
 
     private nonisolated static func gitWorktreeAdd(repoPath: String, branch: String, worktreePath: String) throws {

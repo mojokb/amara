@@ -15,6 +15,7 @@ struct WorktreeListView: View {
     let onOpenFile: (URL, String) -> Void
 
     @State private var showingCreateSheet = false
+    @State private var showingGiteaSettings = false
     @State private var newBranch = ""
     @State private var createError: String?
     @State private var isCreating = false
@@ -38,6 +39,9 @@ struct WorktreeListView: View {
         .animation(.easeInOut(duration: 0.22), value: fileBrowserEntry?.path)
         .sheet(isPresented: $showingCreateSheet) {
             createSheet
+        }
+        .sheet(isPresented: $showingGiteaSettings) {
+            GiteaSettingsView(onSave: onRefresh)
         }
     }
 
@@ -67,6 +71,14 @@ struct WorktreeListView: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)
             Spacer()
+            Button(action: { showingGiteaSettings = true }) {
+                Image(systemName: "network")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(GiteaCredentials.isConfigured ? Color.accentColor : .secondary)
+            .help(GiteaCredentials.isConfigured ? "Gitea 연동 설정됨" : "Gitea 연동 설정")
+
             Button(action: onRefresh) {
                 Image(systemName: "arrow.clockwise")
                     .font(.caption)
@@ -267,6 +279,15 @@ private struct WorktreeRowView: View {
                 Circle()
                     .fill(Color.accentColor)
                     .frame(width: 7, height: 7)
+            }
+            if let pr = worktree.prInfo {
+                Text("#\(pr.number)")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(pr.state.color)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(pr.state.color.opacity(0.12),
+                                in: Capsule())
             } else if worktree.isLocked {
                 Image(systemName: "lock.fill")
                     .font(.caption2)
