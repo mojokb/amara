@@ -119,13 +119,29 @@ final class WorkspaceManager: ObservableObject {
 
     // MARK: - PR merge handling
 
+    /// Non-nil when a PR has just merged and is awaiting user confirmation to remove the worktree.
+    @Published private(set) var pendingMergeEntry: WorktreeEntry?
+
     private func handlePRMerged(_ entry: WorktreeEntry) {
-        guard let repoPath = repositoryPath else { return }
+        pendingMergeEntry = entry
+    }
+
+    func confirmRemoveMergedWorktree() {
+        guard let entry = pendingMergeEntry,
+              let repoPath = repositoryPath else {
+            pendingMergeEntry = nil
+            return
+        }
+        pendingMergeEntry = nil
         remove(path: entry.path)
         worktreeProvider.refresh(for: repoPath)
         Task.detached(priority: .utility) {
             Self.gitWorktreeRemove(repoPath: repoPath, worktreePath: entry.path)
         }
+    }
+
+    func cancelRemoveMergedWorktree() {
+        pendingMergeEntry = nil
     }
 
     private nonisolated static func gitWorktreeRemove(repoPath: String, worktreePath: String) {

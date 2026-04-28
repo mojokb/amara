@@ -30,6 +30,26 @@ struct WorkspaceRootView: View {
         }
         // Makes ghostty available to SurfaceWrapper / InspectableSurface descendants.
         .environmentObject(ghostty)
+        .alert(
+            "PR Merged — Remove Worktree?",
+            isPresented: Binding(
+                get: { manager.pendingMergeEntry != nil },
+                set: { if !$0 { manager.cancelRemoveMergedWorktree() } }
+            )
+        ) {
+            Button("Remove", role: .destructive) {
+                manager.confirmRemoveMergedWorktree()
+            }
+            Button("Keep", role: .cancel) {
+                manager.cancelRemoveMergedWorktree()
+            }
+        } message: {
+            if let entry = manager.pendingMergeEntry {
+                let pr = entry.prInfo
+                let prLabel = pr.map { "PR #\($0.number)" } ?? "PR"
+                Text("\(prLabel) '\(entry.branch)' 가 merged 되었습니다.\n워크트리 '\(entry.name)' 를 삭제할까요?")
+            }
+        }
     }
 
     // MARK: - Status bar
