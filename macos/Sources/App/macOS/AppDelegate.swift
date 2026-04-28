@@ -26,6 +26,7 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuSecureInput: NSMenuItem?
     @IBOutlet private var menuQuit: NSMenuItem?
 
+    @IBOutlet private var menuNewWorkspace: NSMenuItem?
     @IBOutlet private var menuNewWindow: NSMenuItem?
     @IBOutlet private var menuNewTab: NSMenuItem?
     @IBOutlet private var menuSplitRight: NSMenuItem?
@@ -1121,6 +1122,7 @@ extension AppDelegate {
         self.menuOpenConfig?.setImageIfDesired(systemSymbolName: "gear")
         self.menuReloadConfig?.setImageIfDesired(systemSymbolName: "arrow.trianglehead.2.clockwise.rotate.90")
         self.menuSecureInput?.setImageIfDesired(systemSymbolName: "lock.display")
+        self.menuNewWorkspace?.setImageIfDesired(systemSymbolName: "square.grid.2x2")
         self.menuNewWindow?.setImageIfDesired(systemSymbolName: "macwindow.badge.plus")
         self.menuNewTab?.setImageIfDesired(systemSymbolName: "macwindow")
         self.menuSplitRight?.setImageIfDesired(systemSymbolName: "rectangle.righthalf.inset.filled")
