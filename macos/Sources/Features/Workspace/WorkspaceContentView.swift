@@ -2,9 +2,9 @@ import SwiftUI
 
 /// Right-panel view for a single worktree.
 ///
-/// Shows the custom tab bar and a ZStack of all surfaces for this worktree.
-/// Non-active surfaces stay in the view hierarchy at opacity 0 so the PTY
-/// keeps running while the user works in another tab.
+/// Top half  — tab bar + agent/file surfaces (claude, codex, vim, markdown viewer).
+/// Bottom half — plain shell terminal.
+/// The split is user-resizable via NSSplitView (VSplitView).
 struct WorkspaceContentView: View {
     @ObservedObject var workspace: WorktreeWorkspace
 
@@ -18,39 +18,55 @@ struct WorkspaceContentView: View {
                 onClose: closeFile
             )
 
-            ZStack {
-                // Claude session — always in hierarchy, invisible when not active
-                Amara.InspectableSurface(surfaceView: workspace.claudeSurface)
-                    .surfaceVisible(workspace.activeTab == .claude)
+            VSplitView {
+                agentPanel
+                terminalPanel
+            }
+        }
+    }
 
-                // Codex session
-                Amara.InspectableSurface(surfaceView: workspace.codexSurface)
-                    .surfaceVisible(workspace.activeTab == .codex)
+    // MARK: - Top panel (agents + files)
 
-                // File editor tabs
-                ForEach(workspace.fileTabs, id: \.self) { url in
-                    if let surface = workspace.fileSurfaces[url] {
-                        let isActive = workspace.activeTab == .file(url)
-                        let isMarkdown = url.pathExtension.lowercased() == "md"
-                        let viewing = workspace.isViewingMarkdown(url)
+    private var agentPanel: some View {
+        ZStack {
+            // Claude session — always in hierarchy, invisible when not active
+            Amara.InspectableSurface(surfaceView: workspace.claudeSurface)
+                .surfaceVisible(workspace.activeTab == .claude)
 
-                        // vim surface — kept alive even when markdown viewer is showing
-                        Amara.InspectableSurface(surfaceView: surface)
-                            .surfaceVisible(isActive && !(isMarkdown && viewing))
+            // Codex session
+            Amara.InspectableSurface(surfaceView: workspace.codexSurface)
+                .surfaceVisible(workspace.activeTab == .codex)
 
-                        // markdown viewer — overlaid when in viewer mode
-                        if isMarkdown {
-                            MarkdownViewerView(fileURL: url)
-                                .opacity(isActive && viewing ? 1 : 0)
-                                .allowsHitTesting(isActive && viewing)
-                                .accessibilityHidden(!(isActive && viewing))
-                        }
+            // File editor tabs
+            ForEach(workspace.fileTabs, id: \.self) { url in
+                if let surface = workspace.fileSurfaces[url] {
+                    let isActive = workspace.activeTab == .file(url)
+                    let isMarkdown = url.pathExtension.lowercased() == "md"
+                    let viewing = workspace.isViewingMarkdown(url)
+
+                    // vim surface — kept alive even when markdown viewer is showing
+                    Amara.InspectableSurface(surfaceView: surface)
+                        .surfaceVisible(isActive && !(isMarkdown && viewing))
+
+                    // markdown viewer — overlaid when in viewer mode
+                    if isMarkdown {
+                        MarkdownViewerView(fileURL: url)
+                            .opacity(isActive && viewing ? 1 : 0)
+                            .allowsHitTesting(isActive && viewing)
+                            .accessibilityHidden(!(isActive && viewing))
                     }
                 }
             }
-            .overlay(alignment: .topTrailing) { markdownToggleButton }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .overlay(alignment: .topTrailing) { markdownToggleButton }
+        .frame(minHeight: 150)
+    }
+
+    // MARK: - Bottom panel (terminal)
+
+    private var terminalPanel: some View {
+        Amara.InspectableSurface(surfaceView: workspace.shellSurface)
+            .frame(minHeight: 80)
     }
 
     // MARK: - Markdown toggle

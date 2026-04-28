@@ -16,6 +16,9 @@ final class WorktreeWorkspace: ObservableObject {
     /// The surface running `codex` in this worktree.
     let codexSurface: Amara.SurfaceView
 
+    /// Plain shell surface shown in the bottom terminal panel.
+    let shellSurface: Amara.SurfaceView
+
     private let ghosttyApp: ghostty_app_t
 
     /// Ordered list of open file URLs (editor tabs).
@@ -71,6 +74,10 @@ final class WorktreeWorkspace: ObservableObject {
         codexConfig.workingDirectory = path
         codexConfig.command = codexCommand
         self.codexSurface = Amara.SurfaceView(ghosttyApp, baseConfig: codexConfig)
+
+        var shellConfig = Amara.SurfaceConfiguration()
+        shellConfig.workingDirectory = path
+        self.shellSurface = Amara.SurfaceView(ghosttyApp, baseConfig: shellConfig)
 
         setupAttentionTracking()
     }
