@@ -33,6 +33,12 @@ final class WorkspaceManager: ObservableObject {
     // WorkspaceManager so WorkspaceRootView re-renders the sidebar dots.
     private var workspaceCancellables: [String: AnyCancellable] = [:]
 
+    // MARK: - Agent routing
+
+    /// Currently active auto-routes.
+    @Published private(set) var routes: [AgentRoute] = []
+    private var routeCancellables: [UUID: AnyCancellable] = [:]
+
     init(ghostty: Amara.App) {
         self.ghostty = ghostty
         // Forward worktreeProvider changes so SwiftUI views using this manager re-render.
@@ -40,6 +46,10 @@ final class WorkspaceManager: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
         resolver.resolve()
+
+        worktreeProvider.onPRMerged = { [weak self] entry in
+            self?.handlePRMerged(entry)
+        }
     }
 
     // MARK: - Selection
@@ -75,6 +85,17 @@ final class WorkspaceManager: ObservableObject {
         }
     }
 
+    // MARK: - File editor
+
+    func openFile(_ url: URL, inWorktreePath worktreePath: String) {
+        // Ensure the workspace for this worktree exists (creates it if needed).
+        if workspaces[worktreePath] == nil {
+            select(path: worktreePath)
+        }
+        workspaces[worktreePath]?.openFile(url)
+        selectedPath = worktreePath
+    }
+
     // MARK: - Repository
 
     func setRepository(path: String) {
@@ -100,6 +121,92 @@ final class WorkspaceManager: ObservableObject {
             try Self.gitWorktreeAdd(repoPath: repoPath, branch: branch, worktreePath: worktreePath)
         }.value
         worktreeProvider.refresh(for: repoPath)
+    }
+
+    // MARK: - PR merge handling
+
+    /// Non-nil when a PR has just merged and is awaiting user confirmation to remove the worktree.
+    @Published private(set) var pendingMergeEntry: WorktreeEntry?
+
+    private func handlePRMerged(_ entry: WorktreeEntry) {
+        pendingMergeEntry = entry
+    }
+
+    func confirmRemoveMergedWorktree() {
+        guard let entry = pendingMergeEntry,
+              let repoPath = repositoryPath else {
+            pendingMergeEntry = nil
+            return
+        }
+        pendingMergeEntry = nil
+        remove(path: entry.path)
+        worktreeProvider.refresh(for: repoPath)
+        Task.detached(priority: .utility) {
+            Self.gitWorktreeRemove(repoPath: repoPath, worktreePath: entry.path)
+        }
+    }
+
+    func cancelRemoveMergedWorktree() {
+        pendingMergeEntry = nil
+    }
+
+    // MARK: - Routing API
+
+    /// Immediately sends the source agent's accumulated output to the destination agent.
+    func routeNow(from: AgentKind, to: AgentKind, inPath: String) {
+        guard let workspace = workspaces[inPath] else { return }
+        let output = session(from, in: workspace).outputBuffer
+        guard !output.isEmpty else { return }
+        session(to, in: workspace).send(output)
+    }
+
+    /// Registers an auto-route that fires each time the source agent goes idle.
+    /// Replaces any existing auto-route with the same from/to pair in the same worktree.
+    @discardableResult
+    func addAutoRoute(from: AgentKind, to: AgentKind, inPath: String) -> UUID {
+        // Remove duplicate if already registered.
+        if let existing = routes.first(where: {
+            $0.worktreePath == inPath && $0.from == from && $0.to == to && $0.isAuto
+        }) {
+            removeRoute(existing.id)
+        }
+
+        let route = AgentRoute(id: UUID(), worktreePath: inPath, from: from, to: to, isAuto: true)
+        routes.append(route)
+
+        guard let workspace = workspaces[inPath] else { return route.id }
+        let dest = session(to, in: workspace)
+
+        routeCancellables[route.id] = session(from, in: workspace).idlePublisher
+            .receive(on: RunLoop.main)
+            .sink { [weak dest] lastMessage in
+                dest?.send(lastMessage + "\n")
+            }
+        return route.id
+    }
+
+    func removeRoute(_ id: UUID) {
+        routeCancellables.removeValue(forKey: id)
+        routes.removeAll { $0.id == id }
+    }
+
+    /// Returns active routes for a given worktree path.
+    func activeRoutes(for path: String) -> [AgentRoute] {
+        routes.filter { $0.worktreePath == path }
+    }
+
+    private func session(_ kind: AgentKind, in workspace: WorktreeWorkspace) -> AgentSession {
+        kind == .claude ? workspace.claudeSession : workspace.codexSession
+    }
+
+    private nonisolated static func gitWorktreeRemove(repoPath: String, worktreePath: String) {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        proc.arguments = ["-C", repoPath, "worktree", "remove", "--force", worktreePath]
+        proc.standardOutput = Pipe()
+        proc.standardError = Pipe()
+        try? proc.run()
+        proc.waitUntilExit()
     }
 
     private nonisolated static func gitWorktreeAdd(repoPath: String, branch: String, worktreePath: String) throws {

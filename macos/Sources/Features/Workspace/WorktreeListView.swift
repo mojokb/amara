@@ -8,11 +8,16 @@ struct WorktreeListView: View {
     let error: String?
     /// Paths of worktrees that have at least one agent with new activity.
     let needsAttentionPaths: Set<String>
+    /// Path → last agent output line, shown below branch name when needsAttention.
+    let attentionMessages: [String: String]
     let onSelect: (WorktreeEntry) -> Void
     let onRefresh: () -> Void
     let onCreateWorktree: (String) async throws -> Void
+    /// Called when a file is tapped in the file browser. Args: (fileURL, worktreePath).
+    let onOpenFile: (URL, String) -> Void
 
     @State private var showingCreateSheet = false
+    @State private var showingGiteaSettings = false
     @State private var newBranch = ""
     @State private var createError: String?
     @State private var isCreating = false
@@ -36,6 +41,9 @@ struct WorktreeListView: View {
         .animation(.easeInOut(duration: 0.22), value: fileBrowserEntry?.path)
         .sheet(isPresented: $showingCreateSheet) {
             createSheet
+        }
+        .sheet(isPresented: $showingGiteaSettings) {
+            GiteaSettingsView(onSave: onRefresh)
         }
     }
 
@@ -65,6 +73,14 @@ struct WorktreeListView: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)
             Spacer()
+            Button(action: { showingGiteaSettings = true }) {
+                Image(systemName: "network")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(GiteaCredentials.isConfigured ? Color.accentColor : .secondary)
+            .help(GiteaCredentials.isConfigured ? "Gitea 연동 설정됨" : "Gitea 연동 설정")
+
             Button(action: onRefresh) {
                 Image(systemName: "arrow.clockwise")
                     .font(.caption)
@@ -90,7 +106,8 @@ struct WorktreeListView: View {
                     WorktreeRowView(
                         worktree: worktree,
                         isSelected: worktree.path == selectedPath,
-                        needsAttention: needsAttentionPaths.contains(worktree.path)
+                        needsAttention: needsAttentionPaths.contains(worktree.path),
+                        attentionMessage: attentionMessages[worktree.path]
                     )
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) {
@@ -141,8 +158,10 @@ struct WorktreeListView: View {
 
             Divider()
 
-            WorktreeFileBrowser(rootPath: entry.path)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            WorktreeFileBrowser(rootPath: entry.path) { url in
+                onOpenFile(url, entry.path)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -237,6 +256,7 @@ private struct WorktreeRowView: View {
     let worktree: WorktreeEntry
     let isSelected: Bool
     let needsAttention: Bool
+    let attentionMessage: String?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -255,6 +275,14 @@ private struct WorktreeRowView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+
+                if let msg = attentionMessage {
+                    Text(msg)
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.accentColor.opacity(0.8))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Spacer()
@@ -263,6 +291,15 @@ private struct WorktreeRowView: View {
                 Circle()
                     .fill(Color.accentColor)
                     .frame(width: 7, height: 7)
+            }
+            if let pr = worktree.prInfo {
+                Text("#\(pr.number)")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(pr.state.color)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(pr.state.color.opacity(0.12),
+                                in: Capsule())
             } else if worktree.isLocked {
                 Image(systemName: "lock.fill")
                     .font(.caption2)

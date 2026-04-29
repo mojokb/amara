@@ -28,43 +28,62 @@ struct WorkspaceRootView: View {
 
             statusBar
         }
-        // Makes ghostty available to SurfaceWrapper / InspectableSurface descendants.
+        // Makes ghostty and manager available to all descendants via environment.
         .environmentObject(ghostty)
+        .environmentObject(manager)
+        .alert(
+            "PR Merged — Remove Worktree?",
+            isPresented: Binding(
+                get: { manager.pendingMergeEntry != nil },
+                set: { if !$0 { manager.cancelRemoveMergedWorktree() } }
+            )
+        ) {
+            Button("Remove", role: .destructive) {
+                manager.confirmRemoveMergedWorktree()
+            }
+            Button("Keep", role: .cancel) {
+                manager.cancelRemoveMergedWorktree()
+            }
+        } message: {
+            if let entry = manager.pendingMergeEntry {
+                let pr = entry.prInfo
+                let prLabel = pr.map { "PR #\($0.number)" } ?? "PR"
+                Text("\(prLabel) '\(entry.branch)' 가 merged 되었습니다.\n워크트리 '\(entry.name)' 를 삭제할까요?")
+            }
+        }
     }
 
     // MARK: - Status bar
 
     private var statusBar: some View {
-        Divider()
-            .overlay(alignment: .bottom) {
-                HStack(spacing: 12) {
-                    // Repo path
-                    if let repo = manager.repositoryPath {
-                        Label(shortenPath(repo), systemImage: "folder")
-                            .lineLimit(1)
-                    }
-
-                    // Active worktree branch
-                    if let selected = manager.selectedPath,
-                       let entry = manager.worktreeProvider.worktrees.first(where: { $0.path == selected }) {
-                        Divider().frame(height: 12)
-                        Label(entry.branch, systemImage: "arrow.triangle.branch")
-                            .lineLimit(1)
-                        Divider().frame(height: 12)
-                        Label(shortenPath(selected), systemImage: "internaldrive")
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-
-                    Spacer()
-                }
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity)
-                .background(.bar)
+        HStack(spacing: 12) {
+            // Repo path
+            if let repo = manager.repositoryPath {
+                Label(shortenPath(repo), systemImage: "folder")
+                    .lineLimit(1)
             }
+
+            // Active worktree branch
+            if let selected = manager.selectedPath,
+               let entry = manager.worktreeProvider.worktrees.first(where: { $0.path == selected }) {
+                Divider().frame(height: 12)
+                Label(entry.branch, systemImage: "arrow.triangle.branch")
+                    .lineLimit(1)
+                Divider().frame(height: 12)
+                Label(shortenPath(selected), systemImage: "internaldrive")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
     }
 
     private func shortenPath(_ path: String) -> String {
@@ -80,6 +99,16 @@ struct WorkspaceRootView: View {
             .map { $0.path })
     }
 
+    private var attentionMessages: [String: String] {
+        var result: [String: String] = [:]
+        for workspace in manager.workspaces.values {
+            if let msg = workspace.claudeLastMessage ?? workspace.codexLastMessage {
+                result[workspace.path] = msg
+            }
+        }
+        return result
+    }
+
     // MARK: - Left panel
 
     private var leftPanel: some View {
@@ -91,9 +120,11 @@ struct WorkspaceRootView: View {
                     isLoading: manager.worktreeProvider.isLoading,
                     error: manager.worktreeProvider.error,
                     needsAttentionPaths: needsAttentionPaths,
+                    attentionMessages: attentionMessages,
                     onSelect: { manager.select(path: $0.path) },
                     onRefresh: manager.refreshWorktrees,
-                    onCreateWorktree: { try await manager.createWorktree(branch: $0) }
+                    onCreateWorktree: { try await manager.createWorktree(branch: $0) },
+                    onOpenFile: { manager.openFile($0, inWorktreePath: $1) }
                 )
             } else {
                 noRepositoryPanel
