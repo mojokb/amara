@@ -8,6 +8,8 @@ struct WorktreeListView: View {
     let error: String?
     /// Paths of worktrees that have at least one agent with new activity.
     let needsAttentionPaths: Set<String>
+    /// Path → last agent output line, shown below branch name when needsAttention.
+    let attentionMessages: [String: String]
     let onSelect: (WorktreeEntry) -> Void
     let onRefresh: () -> Void
     let onCreateWorktree: (String) async throws -> Void
@@ -104,7 +106,8 @@ struct WorktreeListView: View {
                     WorktreeRowView(
                         worktree: worktree,
                         isSelected: worktree.path == selectedPath,
-                        needsAttention: needsAttentionPaths.contains(worktree.path)
+                        needsAttention: needsAttentionPaths.contains(worktree.path),
+                        attentionMessage: attentionMessages[worktree.path]
                     )
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) {
@@ -253,6 +256,7 @@ private struct WorktreeRowView: View {
     let worktree: WorktreeEntry
     let isSelected: Bool
     let needsAttention: Bool
+    let attentionMessage: String?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -271,6 +275,14 @@ private struct WorktreeRowView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+
+                if let msg = attentionMessage {
+                    Text(msg)
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.accentColor.opacity(0.8))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Spacer()

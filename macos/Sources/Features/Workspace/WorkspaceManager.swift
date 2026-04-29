@@ -33,6 +33,12 @@ final class WorkspaceManager: ObservableObject {
     // WorkspaceManager so WorkspaceRootView re-renders the sidebar dots.
     private var workspaceCancellables: [String: AnyCancellable] = [:]
 
+    // MARK: - Agent routing
+
+    /// Currently active auto-routes.
+    @Published private(set) var routes: [AgentRoute] = []
+    private var routeCancellables: [UUID: AnyCancellable] = [:]
+
     init(ghostty: Amara.App) {
         self.ghostty = ghostty
         // Forward worktreeProvider changes so SwiftUI views using this manager re-render.
@@ -142,6 +148,55 @@ final class WorkspaceManager: ObservableObject {
 
     func cancelRemoveMergedWorktree() {
         pendingMergeEntry = nil
+    }
+
+    // MARK: - Routing API
+
+    /// Immediately sends the source agent's accumulated output to the destination agent.
+    func routeNow(from: AgentKind, to: AgentKind, inPath: String) {
+        guard let workspace = workspaces[inPath] else { return }
+        let output = session(from, in: workspace).outputBuffer
+        guard !output.isEmpty else { return }
+        session(to, in: workspace).send(output)
+    }
+
+    /// Registers an auto-route that fires each time the source agent goes idle.
+    /// Replaces any existing auto-route with the same from/to pair in the same worktree.
+    @discardableResult
+    func addAutoRoute(from: AgentKind, to: AgentKind, inPath: String) -> UUID {
+        // Remove duplicate if already registered.
+        if let existing = routes.first(where: {
+            $0.worktreePath == inPath && $0.from == from && $0.to == to && $0.isAuto
+        }) {
+            removeRoute(existing.id)
+        }
+
+        let route = AgentRoute(id: UUID(), worktreePath: inPath, from: from, to: to, isAuto: true)
+        routes.append(route)
+
+        guard let workspace = workspaces[inPath] else { return route.id }
+        let dest = session(to, in: workspace)
+
+        routeCancellables[route.id] = session(from, in: workspace).idlePublisher
+            .receive(on: RunLoop.main)
+            .sink { [weak dest] lastMessage in
+                dest?.send(lastMessage + "\n")
+            }
+        return route.id
+    }
+
+    func removeRoute(_ id: UUID) {
+        routeCancellables.removeValue(forKey: id)
+        routes.removeAll { $0.id == id }
+    }
+
+    /// Returns active routes for a given worktree path.
+    func activeRoutes(for path: String) -> [AgentRoute] {
+        routes.filter { $0.worktreePath == path }
+    }
+
+    private func session(_ kind: AgentKind, in workspace: WorktreeWorkspace) -> AgentSession {
+        kind == .claude ? workspace.claudeSession : workspace.codexSession
     }
 
     private nonisolated static func gitWorktreeRemove(repoPath: String, worktreePath: String) {

@@ -7,6 +7,9 @@ import SwiftUI
 /// The split is user-resizable via NSSplitView (VSplitView).
 struct WorkspaceContentView: View {
     @ObservedObject var workspace: WorktreeWorkspace
+    @EnvironmentObject private var manager: WorkspaceManager
+
+    @State private var showingLog = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,11 +47,9 @@ struct WorkspaceContentView: View {
                     let isMarkdown = url.pathExtension.lowercased() == "md"
                     let viewing = workspace.isViewingMarkdown(url)
 
-                    // vim surface — kept alive even when markdown viewer is showing
                     Amara.InspectableSurface(surfaceView: surface)
                         .surfaceVisible(isActive && !(isMarkdown && viewing))
 
-                    // markdown viewer — overlaid when in viewer mode
                     if isMarkdown {
                         MarkdownViewerView(fileURL: url)
                             .opacity(isActive && viewing ? 1 : 0)
@@ -58,7 +59,7 @@ struct WorkspaceContentView: View {
                 }
             }
         }
-        .overlay(alignment: .topTrailing) { markdownToggleButton }
+        .overlay(alignment: .topTrailing) { topTrailingButtons }
         .frame(minHeight: 150)
     }
 
@@ -69,24 +70,115 @@ struct WorkspaceContentView: View {
             .frame(minHeight: 80)
     }
 
-    // MARK: - Markdown toggle
+    // MARK: - Top-right overlay buttons
+
+    private var activeAgentSession: AgentSession? {
+        switch workspace.activeTab {
+        case .claude: return workspace.claudeSession
+        case .codex:  return workspace.codexSession
+        default:      return nil
+        }
+    }
 
     @ViewBuilder
-    private var markdownToggleButton: some View {
-        if case .file(let url) = workspace.activeTab,
-           url.pathExtension.lowercased() == "md" {
-            let viewing = workspace.isViewingMarkdown(url)
-            Button { workspace.toggleMarkdownMode(for: url) } label: {
-                Label(viewing ? "Edit" : "Preview",
-                      systemImage: viewing ? "pencil" : "doc.richtext")
-                    .font(.system(size: 11))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(.regularMaterial, in: Capsule())
+    private var topTrailingButtons: some View {
+        HStack(spacing: 6) {
+            // Agent log popover — only on agent tabs
+            if let session = activeAgentSession {
+                let tabName = workspace.activeTab == .claude ? "Claude" : "Codex"
+                Button {
+                    showingLog.toggle()
+                } label: {
+                    Image(systemName: "list.bullet.rectangle")
+                        .font(.system(size: 11))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(.regularMaterial, in: Capsule())
+                        .foregroundStyle(showingLog ? Color.accentColor : .primary)
+                }
+                .buttonStyle(.plain)
+                .help("Show \(tabName) output log")
+                .popover(isPresented: $showingLog, arrowEdge: .top) {
+                    AgentLogView(session: session, title: "\(tabName) Log")
+                        .frame(width: 560, height: 420)
+                }
             }
-            .buttonStyle(.plain)
-            .padding(8)
+
+            // Route menu — only on agent tabs
+            if workspace.activeTab == .claude || workspace.activeTab == .codex {
+                routeMenuButton
+            }
+
+            // Markdown toggle — only for .md file tabs
+            if case .file(let url) = workspace.activeTab,
+               url.pathExtension.lowercased() == "md" {
+                let viewing = workspace.isViewingMarkdown(url)
+                Button { workspace.toggleMarkdownMode(for: url) } label: {
+                    Label(viewing ? "Edit" : "Preview",
+                          systemImage: viewing ? "pencil" : "doc.richtext")
+                        .font(.system(size: 11))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(.regularMaterial, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
         }
+        .padding(8)
+    }
+
+    // MARK: - Route menu
+
+    private var routeMenuButton: some View {
+        let myRoutes = manager.activeRoutes(for: workspace.path)
+        let hasAuto  = myRoutes.contains { $0.isAuto }
+
+        return Menu {
+            Section("Send output now") {
+                Button("claude  →  codex") {
+                    manager.routeNow(from: .claude, to: .codex, inPath: workspace.path)
+                }
+                Button("codex  →  claude") {
+                    manager.routeNow(from: .codex, to: .claude, inPath: workspace.path)
+                }
+            }
+            Section("Auto-route on idle") {
+                Toggle("claude  →  codex", isOn: autoRouteBinding(from: .claude, to: .codex))
+                Toggle("codex  →  claude", isOn: autoRouteBinding(from: .codex, to: .claude))
+            }
+        } label: {
+            Image(systemName: hasAuto
+                  ? "arrow.triangle.2.circlepath.circle.fill"
+                  : "arrow.triangle.2.circlepath")
+                .font(.system(size: 11))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(.regularMaterial, in: Capsule())
+                .foregroundStyle(hasAuto ? Color.accentColor : .primary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private func autoRouteBinding(from: AgentKind, to: AgentKind) -> Binding<Bool> {
+        Binding(
+            get: {
+                manager.routes.contains {
+                    $0.worktreePath == workspace.path &&
+                    $0.from == from && $0.to == to && $0.isAuto
+                }
+            },
+            set: { on in
+                if on {
+                    manager.addAutoRoute(from: from, to: to, inPath: workspace.path)
+                } else if let r = manager.routes.first(where: {
+                    $0.worktreePath == workspace.path &&
+                    $0.from == from && $0.to == to && $0.isAuto
+                }) {
+                    manager.removeRoute(r.id)
+                }
+            }
+        )
     }
 
     // MARK: - Helpers
@@ -99,9 +191,6 @@ struct WorkspaceContentView: View {
 // MARK: - View modifier helpers
 
 private extension View {
-    /// Keeps the view in the SwiftUI layout tree but hides it when `visible` is false.
-    /// Unlike `.hidden()`, this does not call `@ViewBuilder if/else` so the underlying
-    /// NSViewRepresentable (and the PTY inside it) stays alive across visibility changes.
     func surfaceVisible(_ visible: Bool) -> some View {
         self
             .opacity(visible ? 1.0 : 0.0)

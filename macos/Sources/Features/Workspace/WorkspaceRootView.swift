@@ -28,8 +28,9 @@ struct WorkspaceRootView: View {
 
             statusBar
         }
-        // Makes ghostty available to SurfaceWrapper / InspectableSurface descendants.
+        // Makes ghostty and manager available to all descendants via environment.
         .environmentObject(ghostty)
+        .environmentObject(manager)
         .alert(
             "PR Merged — Remove Worktree?",
             isPresented: Binding(
@@ -98,6 +99,16 @@ struct WorkspaceRootView: View {
             .map { $0.path })
     }
 
+    private var attentionMessages: [String: String] {
+        var result: [String: String] = [:]
+        for workspace in manager.workspaces.values {
+            if let msg = workspace.claudeLastMessage ?? workspace.codexLastMessage {
+                result[workspace.path] = msg
+            }
+        }
+        return result
+    }
+
     // MARK: - Left panel
 
     private var leftPanel: some View {
@@ -109,6 +120,7 @@ struct WorkspaceRootView: View {
                     isLoading: manager.worktreeProvider.isLoading,
                     error: manager.worktreeProvider.error,
                     needsAttentionPaths: needsAttentionPaths,
+                    attentionMessages: attentionMessages,
                     onSelect: { manager.select(path: $0.path) },
                     onRefresh: manager.refreshWorktrees,
                     onCreateWorktree: { try await manager.createWorktree(branch: $0) },
