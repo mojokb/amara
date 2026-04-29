@@ -40,6 +40,7 @@
                 <outlet property="menuMoveSplitDividerUp" destination="h9Y-40-3oo" id="dDi-Vq-I3r"/>
                 <outlet property="menuNewTab" destination="uTG-Vz-hJU" id="eMg-R3-SeS"/>
                 <outlet property="menuNewWindow" destination="Was-JA-tGl" id="lK7-3I-CPG"/>
+                <outlet property="menuNewWorkspace" destination="amr-WS-N01" id="amr-WS-N03"/>
                 <outlet property="menuNextSplit" destination="bD7-ei-wKU" id="LeT-xw-eh4"/>
                 <outlet property="menuOpenConfig" destination="BOF-NM-1cW" id="Nze-Go-glw"/>
                 <outlet property="menuPaste" destination="i27-pK-umN" id="ICc-X2-gV3"/>
@@ -154,7 +155,14 @@
                     <modifierMask key="keyEquivalentModifierMask"/>
                     <menu key="submenu" title="File" id="bib-Uj-vzu">
                         <items>
-                            <menuItem title="New Window" id="Was-JA-tGl">
+                            <menuItem title="New Workspace" id="amr-WS-N01">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="openWorkspaceWindow:" target="-1" id="amr-WS-N02"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem isSeparatorItem="YES" id="amr-WS-N04"/>
+                            <menuItem title="New Terminal Window" id="Was-JA-tGl">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
                                     <action selector="newWindow:" target="-1" id="pnf-fE-gHi"/>

@@ -26,6 +26,7 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuSecureInput: NSMenuItem?
     @IBOutlet private var menuQuit: NSMenuItem?
 
+    @IBOutlet private var menuNewWorkspace: NSMenuItem?
     @IBOutlet private var menuNewWindow: NSMenuItem?
     @IBOutlet private var menuNewTab: NSMenuItem?
     @IBOutlet private var menuSplitRight: NSMenuItem?
@@ -351,9 +352,9 @@ class AppDelegate: NSObject,
             // is possible to have other windows in a few scenarios:
             //   - if we're opening a URL since `application(_:openFile:)` is called before this.
             //   - if we're restoring from persisted state
-            if TerminalController.all.isEmpty && derivedConfig.initialWindow {
+            if derivedConfig.initialWindow {
                 undoManager.disableUndoRegistration()
-                _ = TerminalController.newWindow(ghostty)
+                _ = WorkspaceWindowController.newWindow(ghostty)
                 undoManager.enableUndoRegistration()
             }
         }
@@ -446,8 +447,8 @@ class AppDelegate: NSObject,
         // but I haven't seen it happen in releases. I'm unsure why.
         guard applicationHasBecomeActive else { return true }
 
-        // No visible windows, open a new one.
-        _ = TerminalController.newWindow(ghostty)
+        // No visible windows, open the workspace window.
+        _ = WorkspaceWindowController.newWindow(ghostty)
         return false
     }
 
@@ -1121,6 +1122,7 @@ extension AppDelegate {
         self.menuOpenConfig?.setImageIfDesired(systemSymbolName: "gear")
         self.menuReloadConfig?.setImageIfDesired(systemSymbolName: "arrow.trianglehead.2.clockwise.rotate.90")
         self.menuSecureInput?.setImageIfDesired(systemSymbolName: "lock.display")
+        self.menuNewWorkspace?.setImageIfDesired(systemSymbolName: "square.grid.2x2")
         self.menuNewWindow?.setImageIfDesired(systemSymbolName: "macwindow.badge.plus")
         self.menuNewTab?.setImageIfDesired(systemSymbolName: "macwindow")
         self.menuSplitRight?.setImageIfDesired(systemSymbolName: "rectangle.righthalf.inset.filled")

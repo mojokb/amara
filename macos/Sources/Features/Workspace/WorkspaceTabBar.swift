@@ -5,6 +5,8 @@ import SwiftUI
 struct WorkspaceTabBar: View {
     @Binding var activeTab: WorkspaceTab
     let fileTabs: [URL]
+    let claudeNeedsAttention: Bool
+    let codexNeedsAttention: Bool
     let onClose: (URL) -> Void
 
     var body: some View {
@@ -34,19 +36,31 @@ struct WorkspaceTabBar: View {
 
     private func fixedTab(_ tab: WorkspaceTab) -> some View {
         let isActive = activeTab == tab
+        let needsAttention: Bool = switch tab {
+        case .claude: claudeNeedsAttention
+        case .codex:  codexNeedsAttention
+        default:      false
+        }
         return Button { activeTab = tab } label: {
-            Text(tab.displayName)
-                .font(.callout)
-                .padding(.horizontal, 14)
-                .frame(height: 36)
-                .background(alignment: .bottom) {
-                    if isActive {
-                        Rectangle()
-                            .fill(Color.accentColor)
-                            .frame(height: 2)
-                    }
+            HStack(spacing: 4) {
+                Text(tab.displayName)
+                    .font(.callout)
+                if needsAttention {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: 6, height: 6)
                 }
-                .foregroundStyle(isActive ? .primary : .secondary)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 36)
+            .background(alignment: .bottom) {
+                if isActive {
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(height: 2)
+                }
+            }
+            .foregroundStyle(isActive ? .primary : .secondary)
         }
         .buttonStyle(.plain)
     }

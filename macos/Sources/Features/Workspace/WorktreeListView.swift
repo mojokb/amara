@@ -6,12 +6,52 @@ struct WorktreeListView: View {
     let selectedPath: String?
     let isLoading: Bool
     let error: String?
+    /// Paths of worktrees that have at least one agent with new activity.
+    let needsAttentionPaths: Set<String>
+    /// Path → last agent output line, shown below branch name when needsAttention.
+    let attentionMessages: [String: String]
     let onSelect: (WorktreeEntry) -> Void
     let onRefresh: () -> Void
+    let onCreateWorktree: (String) async throws -> Void
+    /// Called when a file is tapped in the file browser. Args: (fileURL, worktreePath).
+    let onOpenFile: (URL, String) -> Void
+
+    @State private var showingCreateSheet = false
+    @State private var showingGiteaSettings = false
+    @State private var newBranch = ""
+    @State private var createError: String?
+    @State private var isCreating = false
+
+    /// Non-nil while the file browser panel is shown for a worktree.
+    @State private var fileBrowserEntry: WorktreeEntry? = nil
 
     var body: some View {
+        ZStack {
+            // Worktree list (slides left when file browser opens)
+            listPanel
+                .offset(x: fileBrowserEntry == nil ? 0 : -20)
+                .opacity(fileBrowserEntry == nil ? 1 : 0)
+
+            // File browser panel (slides in from the right)
+            if let entry = fileBrowserEntry {
+                fileBrowserPanel(for: entry)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: fileBrowserEntry?.path)
+        .sheet(isPresented: $showingCreateSheet) {
+            createSheet
+        }
+        .sheet(isPresented: $showingGiteaSettings) {
+            GiteaSettingsView(onSave: onRefresh)
+        }
+    }
+
+    // MARK: - List panel
+
+    private var listPanel: some View {
         VStack(spacing: 0) {
-            header
+            listHeader
             Divider()
 
             if isLoading {
@@ -27,14 +67,29 @@ struct WorktreeListView: View {
         }
     }
 
-    private var header: some View {
+    private var listHeader: some View {
         HStack {
             Text("WORKTREES")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)
             Spacer()
+            Button(action: { showingGiteaSettings = true }) {
+                Image(systemName: "network")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(GiteaCredentials.isConfigured ? Color.accentColor : .secondary)
+            .help(GiteaCredentials.isConfigured ? "Gitea 연동 설정됨" : "Gitea 연동 설정")
+
             Button(action: onRefresh) {
                 Image(systemName: "arrow.clockwise")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+
+            Button(action: { showingCreateSheet = true }) {
+                Image(systemName: "plus")
                     .font(.caption)
             }
             .buttonStyle(.plain)
@@ -50,10 +105,18 @@ struct WorktreeListView: View {
                 ForEach(worktrees) { worktree in
                     WorktreeRowView(
                         worktree: worktree,
-                        isSelected: worktree.path == selectedPath
+                        isSelected: worktree.path == selectedPath,
+                        needsAttention: needsAttentionPaths.contains(worktree.path),
+                        attentionMessage: attentionMessages[worktree.path]
                     )
                     .contentShape(Rectangle())
-                    .onTapGesture {
+                    .onTapGesture(count: 2) {
+                        guard !worktree.isBare else { return }
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            fileBrowserEntry = worktree
+                        }
+                    }
+                    .onTapGesture(count: 1) {
                         if !worktree.isBare { onSelect(worktree) }
                     }
                     .padding(.horizontal, 6)
@@ -62,6 +125,104 @@ struct WorktreeListView: View {
             .padding(.vertical, 4)
         }
     }
+
+    // MARK: - File browser panel
+
+    private func fileBrowserPanel(for entry: WorktreeEntry) -> some View {
+        VStack(spacing: 0) {
+            // Header: back button + worktree name
+            HStack(spacing: 6) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.22)) {
+                        fileBrowserEntry = nil
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Text(entry.name)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            WorktreeFileBrowser(rootPath: entry.path) { url in
+                onOpenFile(url, entry.path)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    // MARK: - Create sheet
+
+    private var createSheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("New Worktree")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Branch name")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("feature/my-branch", text: $newBranch)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { submitCreate() }
+            }
+
+            if let err = createError {
+                Text(err)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismissCreate() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Create") { submitCreate() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(newBranch.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
+            }
+        }
+        .padding(20)
+        .frame(width: 320)
+    }
+
+    private func submitCreate() {
+        let branch = newBranch.trimmingCharacters(in: .whitespaces)
+        guard !branch.isEmpty else { return }
+        isCreating = true
+        createError = nil
+        Task {
+            do {
+                try await onCreateWorktree(branch)
+                dismissCreate()
+            } catch {
+                createError = error.localizedDescription
+            }
+            isCreating = false
+        }
+    }
+
+    private func dismissCreate() {
+        showingCreateSheet = false
+        newBranch = ""
+        createError = nil
+    }
+
+    // MARK: - Empty / error states
 
     private var emptyState: some View {
         VStack(spacing: 8) {
@@ -89,9 +250,13 @@ struct WorktreeListView: View {
     }
 }
 
+// MARK: - Row
+
 private struct WorktreeRowView: View {
     let worktree: WorktreeEntry
     let isSelected: Bool
+    let needsAttention: Bool
+    let attentionMessage: String?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -110,11 +275,32 @@ private struct WorktreeRowView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+
+                if let msg = attentionMessage {
+                    Text(msg)
+                        .font(.system(size: 9))
+                        .foregroundStyle(Color.accentColor.opacity(0.8))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Spacer()
 
-            if worktree.isLocked {
+            if needsAttention {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 7, height: 7)
+            }
+            if let pr = worktree.prInfo {
+                Text("#\(pr.number)")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(pr.state.color)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(pr.state.color.opacity(0.12),
+                                in: Capsule())
+            } else if worktree.isLocked {
                 Image(systemName: "lock.fill")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
