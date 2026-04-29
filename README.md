@@ -1,4 +1,5 @@
 <p align="center">
+  <img src="macos/Assets.xcassets/AppIconImage.imageset/macOS-AppIcon-512px.png" width="128" alt="Amara icon"/>
   <h1 align="center">Amara</h1>
   <p align="center">
     A native macOS workspace for AI-agent coding with git worktrees.<br/>
