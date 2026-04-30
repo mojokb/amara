@@ -57,10 +57,10 @@ final class WorkspaceManager: ObservableObject {
     func select(path: String) {
         if workspaces[path] == nil {
             guard let app = ghostty.app else { return }
-            // Use resolved full paths when available; fall back to login-shell
-            // invocation so PATH is sourced from the user's shell config.
-            let claudeCmd = resolver.claudeCommand ?? "/bin/zsh -l -c 'source ~/.zshrc 2>/dev/null; exec claude'"
-            let codexCmd  = resolver.codexCommand  ?? "/bin/zsh -l -c 'source ~/.zshrc 2>/dev/null; exec codex'"
+            // Block workspace creation until both agents are confirmed present.
+            guard !resolver.isChecking, resolver.missingAgents.isEmpty,
+                  let claudeCmd = resolver.claudeCommand,
+                  let codexCmd  = resolver.codexCommand else { return }
             let workspace = WorktreeWorkspace(
                 path: path,
                 ghosttyApp: app,

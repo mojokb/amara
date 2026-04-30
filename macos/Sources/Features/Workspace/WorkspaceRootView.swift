@@ -150,35 +150,50 @@ struct WorkspaceRootView: View {
     // MARK: - Right panel
 
     private var rightPanel: some View {
-        VStack(spacing: 0) {
-            preflightBanner
-            rightPanelContent
+        Group {
+            if manager.resolver.isChecking {
+                agentCheckingView
+            } else if !manager.resolver.missingAgents.isEmpty {
+                agentMissingView
+            } else {
+                rightPanelContent
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    @ViewBuilder
-    private var preflightBanner: some View {
-        if manager.resolver.isChecking {
-            Label("Checking for claude and codex…", systemImage: "magnifyingglass")
-                .font(.caption)
+    private var agentCheckingView: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Looking for claude and codex…")
+                .font(.callout)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.bar)
-        } else if !manager.resolver.missingAgents.isEmpty {
-            let names = manager.resolver.missingAgents.joined(separator: ", ")
-            Label(
-                "\(names) not found — install and relaunch Amara.",
-                systemImage: "exclamationmark.triangle.fill"
-            )
-            .font(.caption)
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.yellow.opacity(0.25))
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var agentMissingView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.largeTitle)
+                .foregroundStyle(.yellow)
+            let names = manager.resolver.missingAgents
+                .map { "`\($0)`" }
+                .joined(separator: " and ")
+            Text("\(names) not found")
+                .font(.headline)
+            Text("Install the missing agent(s) and relaunch Amara.\nAmara requires both claude and codex to be available in your shell PATH.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Retry") {
+                manager.resolver.resolve()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var rightPanelContent: some View {
