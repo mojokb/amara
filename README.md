@@ -18,9 +18,7 @@
 
 ## Overview
 
-**Amara** is the name of the *Wu* — the immortal servant — in the manga [3×3 Eyes](https://en.wikipedia.org/wiki/3%C3%973_Eyes) by Yuzo Takada. A Wu exists to serve, never tires, and cannot be stopped. That's the spirit behind this app: a tireless workspace that keeps your AI agents running in the background, no matter what.
-
-Amara is purpose-built for agentic development workflows where multiple AI coding agents run in parallel, each on its own `git worktree`. Instead of juggling terminal windows and branches manually, Amara gives every worktree its own isolated workspace — with claude, codex, and a shell always running in the background.
+**Amara** takes its name from the *Wu* — the immortal servant — in [3×3 Eyes](https://en.wikipedia.org/wiki/3%C3%973_Eyes) by Yuzo Takada. A Wu exists to serve, never tires, and cannot be stopped. In that spirit, Amara is a tireless workspace for agentic development: multiple AI coding agents running in parallel, each on its own `git worktree`, always alive in the background — no juggling terminal windows or branches manually.
 
 Built on [libghostty](https://github.com/ghostty-org/ghostty) for high-performance terminal rendering.
 
