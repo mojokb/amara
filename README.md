@@ -30,6 +30,11 @@ Built on [libghostty](https://github.com/ghostty-org/ghostty) for high-performan
 - Create new worktrees directly from the UI (`+` button)
 - File browser per worktree with git status indicators (`M` / `A` / `D` / `U` / `R`)
 
+### Agent Setup
+- Startup dialog confirms claude and codex are detected before entering the workspace
+- Checks Homebrew, Volta, nvm, asdf, and common npm global paths — instant, no shell spawn
+- Missing agents block entry; install hints provided with retry option
+
 ### Agent Sessions
 - **claude** and **codex** tabs per worktree, each with a dedicated persistent PTY
 - **Shell panel** (bottom, resizable) — always-available plain terminal
