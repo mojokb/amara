@@ -29,6 +29,7 @@ final class WorkspaceManager: ObservableObject {
     }
 
     private var providerCancellable: AnyCancellable?
+    private var resolverCancellable: AnyCancellable?
     // One cancellable per live workspace — forwards attention-state changes up to
     // WorkspaceManager so WorkspaceRootView re-renders the sidebar dots.
     private var workspaceCancellables: [String: AnyCancellable] = [:]
@@ -43,6 +44,9 @@ final class WorkspaceManager: ObservableObject {
         self.ghostty = ghostty
         // Forward worktreeProvider changes so SwiftUI views using this manager re-render.
         providerCancellable = worktreeProvider.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+        resolverCancellable = resolver.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
         resolver.resolve()

@@ -2,16 +2,9 @@ import Foundation
 
 /// Resolves the on-disk paths of `claude` and `codex`.
 ///
-/// GUI apps don't inherit the interactive shell PATH, so we use a two-pass strategy:
-///
-/// 1. **Login shell** — invoke the user's actual shell (`$SHELL`) with `-l` so it
-///    sources all startup files (`.zprofile`, `.zshrc`, `config.fish`, etc.).
-///    This naturally handles nvm, volta, fnm, asdf, mise, and anything else the
-///    user has wired into their shell.
-///
-/// 2. **Known static paths** — check well-known install locations directly
-///    (Homebrew, Volta, asdf shims, mise shims, npm global, ~/bin, …) as a
-///    fallback for setups where the login shell times out or isn't configured.
+/// Checks representative install locations directly (no shell spawn).
+/// Covered: Homebrew, Volta, nvm, npm global prefix, ~/.local/bin.
+/// If not found → `.notFound` immediately; user can Retry after installing.
 @MainActor
 final class AgentPathResolver: ObservableObject {
     enum Status: Equatable {
@@ -45,140 +38,56 @@ final class AgentPathResolver: ObservableObject {
     func resolve() {
         claude = .checking
         codex  = .checking
-        let shell = Self.userShell()
-        Task {
-            async let c = Self.find("claude", shell: shell)
-            async let x = Self.find("codex",  shell: shell)
-            let (cp, xp) = await (c, x)
-            claude = cp.map { .found($0) } ?? .notFound
-            codex  = xp.map { .found($0) } ?? .notFound
-        }
-    }
-
-    // MARK: - Shell detection
-
-    private static func userShell() -> String {
-        // $SHELL is set by the OS for the current user even in GUI contexts.
-        if let shell = ProcessInfo.processInfo.environment["SHELL"],
-           FileManager.default.fileExists(atPath: shell) {
-            return shell
-        }
-        return "/bin/zsh"
-    }
-
-    // MARK: - Two-pass lookup
-
-    private static func find(_ name: String, shell: String) async -> String? {
-        if let path = await viaLoginShell(name, shell: shell) { return path }
-        return viaKnownPaths(name)
-    }
-
-    // MARK: - Pass 1: login shell
-
-    /// Runs `which NAME` through the user's login shell.
-    /// Supports: zsh, bash, fish, dash and any POSIX-compatible shell.
-    /// Times out after 10 s to handle slow rc files gracefully.
-    private static func viaLoginShell(_ name: String, shell: String) async -> String? {
-        await withCheckedContinuation { cont in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let proc = Process()
-                proc.executableURL = URL(fileURLWithPath: shell)
-                // `-l` = login shell → sources .zprofile / .bash_profile /
-                //                      config.fish / etc. automatically.
-                // `which` is a builtin or external available in all major shells.
-                proc.arguments = ["-l", "-c", "which \(name) 2>/dev/null"]
-                let out = Pipe()
-                proc.standardOutput = out
-                proc.standardError  = Pipe()
-
-                // Safety timeout: slow rc files (e.g. nvm with many versions) can block.
-                let kill = DispatchWorkItem { proc.terminate() }
-                DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: kill)
-
-                do {
-                    try proc.run()
-                    proc.waitUntilExit()
-                    kill.cancel()
-                    let raw = String(data: out.fileHandleForReading.readDataToEndOfFile(),
-                                     encoding: .utf8) ?? ""
-                    // `which` may return multiple lines; take the first non-empty one.
-                    let path = raw
-                        .components(separatedBy: "\n")
-                        .map { $0.trimmingCharacters(in: .whitespaces) }
-                        .first { !$0.isEmpty } ?? ""
-
-                    if proc.terminationStatus == 0, !path.isEmpty,
-                       FileManager.default.fileExists(atPath: path) {
-                        cont.resume(returning: path)
-                    } else {
-                        cont.resume(returning: nil)
-                    }
-                } catch {
-                    kill.cancel()
-                    cont.resume(returning: nil)
-                }
+        Task.detached(priority: .userInitiated) {
+            let cp = Self.find("claude")
+            let xp = Self.find("codex")
+            await MainActor.run {
+                self.claude = cp.map { .found($0) } ?? .notFound
+                self.codex  = xp.map { .found($0) } ?? .notFound
             }
         }
     }
 
-    // MARK: - Pass 2: known static paths
+    // MARK: - Path lookup
 
-    /// Checks well-known install locations directly, without spawning a shell.
-    private static func viaKnownPaths(_ name: String) -> String? {
+    nonisolated private static func find(_ name: String) -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let fm   = FileManager.default
 
-        // nvm: resolve the default alias to find the active node version's bin dir.
-        var nvmPaths: [String] = []
-        let nvmAlias = "\(home)/.nvm/alias/default"
-        if let raw = try? String(contentsOfFile: nvmAlias, encoding: .utf8) {
-            let alias = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !alias.isEmpty {
-            // alias may be "20", "v20.11.0", or "lts/iron" — try both with/without 'v'
-            nvmPaths = [
-                "\(home)/.nvm/versions/node/\(alias)/bin/\(name)",
-                "\(home)/.nvm/versions/node/v\(alias)/bin/\(name)",
-                ]
+        // npm prefix from ~/.npmrc
+        var npmPrefixPath: String?
+        if let raw = try? String(contentsOfFile: "\(home)/.npmrc", encoding: .utf8) {
+            for line in raw.components(separatedBy: "\n") {
+                let t = line.trimmingCharacters(in: .whitespaces)
+                if t.hasPrefix("prefix=") {
+                    let prefix = String(t.dropFirst("prefix=".count)).trimmingCharacters(in: .whitespaces)
+                    if !prefix.isEmpty { npmPrefixPath = "\(prefix)/bin/\(name)" }
+                }
             }
         }
 
-        // fnm: enumerate installed versions and pick the latest as a fallback.
-        var fnmPaths: [String] = []
-        let fnmRoot = "\(home)/.local/share/fnm/node-versions"
-        if let versions = try? fm.contentsOfDirectory(atPath: fnmRoot) {
-            fnmPaths = versions
-                .sorted(by: >)
-                .map { "\(fnmRoot)/\($0)/installation/bin/\(name)" }
+        // nvm: enumerate all installed versions newest-first
+        var nvmPaths: [String] = []
+        let nvmDir = "\(home)/.nvm/versions/node"
+        if let versions = try? fm.contentsOfDirectory(atPath: nvmDir) {
+            nvmPaths = versions
+                .sorted {
+                    let a = $0.hasPrefix("v") ? String($0.dropFirst()) : $0
+                    let b = $1.hasPrefix("v") ? String($1.dropFirst()) : $1
+                    return a.compare(b, options: .numeric) == .orderedDescending
+                }
+                .map { "\(nvmDir)/\($0)/bin/\(name)" }
         }
 
         let candidates: [String] = [
-            // Homebrew — Apple Silicon
-            "/opt/homebrew/bin/\(name)",
-            // Homebrew — Intel / manual
-            "/usr/local/bin/\(name)",
-            // System PATH
-            "/usr/bin/\(name)",
-            // Volta (manages node/npm tool binaries)
-            "\(home)/.volta/bin/\(name)",
-            // asdf shims
-            "\(home)/.asdf/shims/\(name)",
-            // mise (formerly rtx) shims
-            "\(home)/.local/share/mise/shims/\(name)",
-            // mise legacy path
-            "\(home)/.rtx/shims/\(name)",
-            // fnm default alias bin
-            "\(home)/.local/share/fnm/aliases/default/bin/\(name)",
-            // npm global (default prefix on macOS)
-            "\(home)/.npm-global/bin/\(name)",
-            // npm global via n / nvm / custom prefix
-            "\(home)/.local/bin/\(name)",
-            // ~/bin (common user-local bin dir)
+            "/opt/homebrew/bin/\(name)",        // Homebrew (Apple Silicon)
+            "/usr/local/bin/\(name)",            // Homebrew (Intel) / system npm
+            "\(home)/.volta/bin/\(name)",        // Volta
+            "\(home)/.asdf/shims/\(name)",       // asdf
+            "\(home)/.npm-global/bin/\(name)",   // npm global custom prefix
+            "\(home)/.local/bin/\(name)",        // misc user-local
             "\(home)/bin/\(name)",
-            // pnpm global
-            "\(home)/Library/pnpm/\(name)",
-            // yarn global
-            "\(home)/.yarn/bin/\(name)",
-        ] + nvmPaths + fnmPaths
+        ] + (npmPrefixPath.map { [$0] } ?? []) + nvmPaths
 
         return candidates.first { fm.fileExists(atPath: $0) }
     }

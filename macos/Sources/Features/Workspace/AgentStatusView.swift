@@ -1,180 +1,183 @@
 import SwiftUI
 
-/// Sheet shown at launch once AgentPathResolver finishes.
-/// Displays resolved paths for claude and codex, or install hints if missing.
 struct AgentStatusView: View {
     @ObservedObject var resolver: AgentPathResolver
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        ZStack {
+            // 8-bit dark background
+            Color(red: 0.04, green: 0.04, blue: 0.14)
+
+            // Scanlines overlay
+            Canvas { ctx, size in
+                var y: CGFloat = 0
+                while y < size.height {
+                    ctx.fill(Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
+                             with: .color(.black.opacity(0.18)))
+                    y += 3
+                }
+            }
+            .allowsHitTesting(false)
+
+            HStack(alignment: .top, spacing: 0) {
+                characterPortrait
+                dialogBox
+            }
+            .padding(16)
+        }
+        .frame(width: 580, height: 300)
+    }
+
+    // MARK: - Character
+
+    private var characterPortrait: some View {
+        Image("AppIconImage")
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(width: 160, height: 268)
+            .clipped()
+            .pixelBorder(color: .cyan.opacity(0.7), width: 2)
+    }
+
+    // MARK: - Dialog box
+
+    private var dialogBox: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider()
-            content
-            Divider()
-            footer
-        }
-        .frame(width: 420)
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: overallIcon)
-                .font(.title2)
-                .foregroundStyle(overallColor)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Agent Setup")
-                    .font(.headline)
-                Text(overallSubtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            // Name tab
+            HStack(spacing: 0) {
+                Text("▶ AMARA")
+                    .font(.system(size: 11, weight: .black, design: .monospaced))
+                    .foregroundStyle(Color(red: 0.04, green: 0.04, blue: 0.14))
+                    .tracking(1)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(Color.cyan)
+                Spacer()
             }
-            Spacer()
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-    }
 
-    private var overallIcon: String {
-        if resolver.isChecking            { return "magnifyingglass" }
-        if resolver.missingAgents.isEmpty { return "checkmark.seal.fill" }
-        return "exclamationmark.triangle.fill"
-    }
+            // Content
+            VStack(alignment: .leading, spacing: 12) {
+                // Dialog message
+                Text(dialogMessage)
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 4)
 
-    private var overallColor: Color {
-        if resolver.isChecking            { return .secondary }
-        if resolver.missingAgents.isEmpty { return .green }
-        return .yellow
-    }
+                // Agent status rows
+                VStack(alignment: .leading, spacing: 6) {
+                    agentRow("claude", status: resolver.claude)
+                    agentRow("codex",  status: resolver.codex)
+                }
 
-    private var overallSubtitle: String {
-        if resolver.isChecking            { return "Searching your shell PATH…" }
-        if resolver.missingAgents.isEmpty { return "Both agents are ready." }
-        let names = resolver.missingAgents.joined(separator: " and ")
-        return "\(names) could not be found."
-    }
+                Spacer()
 
-    // MARK: - Content
-
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            agentRow("claude", status: resolver.claude)
-            agentRow("codex",  status: resolver.codex)
-
-            if !resolver.missingAgents.isEmpty && !resolver.isChecking {
-                Divider()
-                installHints
+                // Footer buttons
+                HStack {
+                    if !resolver.isChecking && !resolver.missingAgents.isEmpty {
+                        pixelButton("[ RETRY ]", color: .yellow) { resolver.resolve() }
+                    }
+                    Spacer()
+                    if resolver.isChecking {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small).colorScheme(.dark)
+                            Text("SCANNING…")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundStyle(.cyan.opacity(0.8))
+                        }
+                    } else if resolver.missingAgents.isEmpty {
+                        pixelButton("[ 응, 가자！]", color: .cyan) { dismiss() }
+                    }
+                }
             }
+            .padding(14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(20)
+        .frame(height: 268)
+        .pixelBorder(color: .cyan.opacity(0.7), width: 2)
+        .padding(.leading, 8)
     }
+
+    // MARK: - Dialog message (3x3 Eyes 느낌)
+
+    private var dialogMessage: String {
+        if resolver.isChecking {
+            return "…지금 찾는 중이야.\n기다려줘."
+        }
+        if resolver.missingAgents.isEmpty {
+            return "찾았어…\n클로드도, 코덱스도.\n이제… 같이 가자."
+        }
+        let names = resolver.missingAgents.map { "'\($0)'" }.joined(separator: "과 ")
+        return "…\(names)가 없어.\n설치하고 나서\n다시 불러줘."
+    }
+
+    // MARK: - Agent row
 
     private func agentRow(_ name: String, status: AgentPathResolver.Status) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            Group {
-                switch status {
-                case .checking:
-                    ProgressView().controlSize(.small).frame(width: 20)
-                case .found:
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .font(.title3)
-                case .notFound:
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.red)
-                        .font(.title3)
-                }
-            }
-            .frame(width: 24)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(name)
-                    .font(.system(.body, design: .monospaced))
-                    .fontWeight(.medium)
-
-                switch status {
-                case .checking:
-                    Text("checking…")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                case .found(let path):
-                    Text(path)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                case .notFound:
-                    Text("not found in PATH or known install locations")
-                        .font(.caption)
-                        .foregroundStyle(.red.opacity(0.8))
-                }
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    // MARK: - Install hints
-
-    private var installHints: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Installation")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
-
-            ForEach(resolver.missingAgents, id: \.self) { agent in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(agent)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(installCommand(for: agent))
-                        .font(.system(.caption, design: .monospaced))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.quinary, in: RoundedRectangle(cornerRadius: 5))
-                        .textSelection(.enabled)
-                }
+        HStack(spacing: 8) {
+            switch status {
+            case .checking:
+                Text("??")
+                    .font(.system(size: 11, weight: .black, design: .monospaced))
+                    .foregroundStyle(.yellow)
+            case .found:
+                Text("OK")
+                    .font(.system(size: 11, weight: .black, design: .monospaced))
+                    .foregroundStyle(.green)
+            case .notFound:
+                Text("NG")
+                    .font(.system(size: 11, weight: .black, design: .monospaced))
+                    .foregroundStyle(.red)
             }
 
-            Text("After installing, click Retry or relaunch Amara.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .padding(.top, 2)
+            Text(name)
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundStyle(.white)
+
+            if case .found(let path) = status {
+                Text(path)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.cyan.opacity(0.75))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            } else if case .notFound = status {
+                Text("NOT FOUND")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.red.opacity(0.9))
+            }
         }
     }
 
-    private func installCommand(for agent: String) -> String {
-        switch agent {
-        case "claude": return "npm install -g @anthropic-ai/claude-code"
-        case "codex":  return "npm install -g @openai/codex"
-        default:       return "# install \(agent) via npm or your package manager"
+    // MARK: - Pixel button
+
+    private func pixelButton(_ label: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 12, weight: .black, design: .monospaced))
+                .foregroundStyle(Color(red: 0.04, green: 0.04, blue: 0.14))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(color)
+                .overlay(
+                    Rectangle().stroke(color.opacity(0.4), lineWidth: 1).padding(2)
+                )
         }
+        .buttonStyle(.plain)
     }
+}
 
-    // MARK: - Footer
+// MARK: - Pixel border modifier
 
-    private var footer: some View {
-        HStack {
-            Spacer()
-            if resolver.isChecking {
-                ProgressView().controlSize(.small).padding(.trailing, 4)
-                Text("Searching…").font(.caption).foregroundStyle(.secondary)
-            } else if !resolver.missingAgents.isEmpty {
-                Button("Retry") {
-                    resolver.resolve()
-                }
+private extension View {
+    func pixelBorder(color: Color, width: CGFloat) -> some View {
+        self.overlay(
+            ZStack {
+                Rectangle().stroke(Color.black, lineWidth: width + 2)
+                Rectangle().stroke(color, lineWidth: width)
+                Rectangle().stroke(color.opacity(0.3), lineWidth: 1).padding(width + 2)
             }
-            Button(resolver.missingAgents.isEmpty ? "Continue" : "Skip") {
-                dismiss()
-            }
-            .keyboardShortcut(.defaultAction)
-            .disabled(resolver.isChecking)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        )
     }
 }

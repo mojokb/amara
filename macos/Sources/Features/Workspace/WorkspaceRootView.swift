@@ -39,6 +39,9 @@ struct WorkspaceRootView: View {
         }
         .sheet(isPresented: $showingAgentStatus) {
             AgentStatusView(resolver: manager.resolver)
+                .interactiveDismissDisabled(
+                    manager.resolver.isChecking || !manager.resolver.missingAgents.isEmpty
+                )
         }
         .alert(
             "PR Merged — Remove Worktree?",
