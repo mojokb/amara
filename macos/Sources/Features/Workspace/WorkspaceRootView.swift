@@ -13,6 +13,8 @@ struct WorkspaceRootView: View {
     let ghostty: Amara.App
     @ObservedObject var manager: WorkspaceManager
 
+    @State private var showingAgentStatus = false
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
@@ -31,6 +33,13 @@ struct WorkspaceRootView: View {
         // Makes ghostty and manager available to all descendants via environment.
         .environmentObject(ghostty)
         .environmentObject(manager)
+        // Show agent path results once at launch when resolver finishes.
+        .onChange(of: manager.resolver.isChecking) { isChecking in
+            if !isChecking { showingAgentStatus = true }
+        }
+        .sheet(isPresented: $showingAgentStatus) {
+            AgentStatusView(resolver: manager.resolver)
+        }
         .alert(
             "PR Merged — Remove Worktree?",
             isPresented: Binding(
