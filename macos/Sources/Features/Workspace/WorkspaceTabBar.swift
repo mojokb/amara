@@ -7,6 +7,7 @@ struct WorkspaceTabBar: View {
     let fileTabs: [URL]
     let claudeNeedsAttention: Bool
     let codexNeedsAttention: Bool
+    let workflowIsRunning: Bool
     let onClose: (URL) -> Void
 
     var body: some View {
@@ -14,6 +15,7 @@ struct WorkspaceTabBar: View {
             HStack(spacing: 0) {
                 fixedTab(.claude)
                 fixedTab(.codex)
+                fixedTab(.workflow)
 
                 if !fileTabs.isEmpty {
                     Divider()
@@ -37,17 +39,19 @@ struct WorkspaceTabBar: View {
     private func fixedTab(_ tab: WorkspaceTab) -> some View {
         let isActive = activeTab == tab
         let needsAttention: Bool = switch tab {
-        case .claude: claudeNeedsAttention
-        case .codex:  codexNeedsAttention
-        default:      false
+        case .claude:    claudeNeedsAttention
+        case .codex:     codexNeedsAttention
+        default:         false
         }
+        let dotColor: Color = tab == .workflow ? .orange : .accentColor
+        let showDot: Bool   = tab == .workflow ? workflowIsRunning : needsAttention
         return Button { activeTab = tab } label: {
             HStack(spacing: 4) {
                 Text(tab.displayName)
                     .font(.callout)
-                if needsAttention {
+                if showDot {
                     Circle()
-                        .fill(Color.accentColor)
+                        .fill(dotColor)
                         .frame(width: 6, height: 6)
                 }
             }

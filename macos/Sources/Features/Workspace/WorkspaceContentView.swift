@@ -18,6 +18,7 @@ struct WorkspaceContentView: View {
                 fileTabs: workspace.fileTabs,
                 claudeNeedsAttention: workspace.claudeNeedsAttention,
                 codexNeedsAttention: workspace.codexNeedsAttention,
+                workflowIsRunning: manager.runner(for: workspace.path)?.isRunning == true,
                 onClose: closeFile
             )
 
@@ -39,6 +40,13 @@ struct WorkspaceContentView: View {
             // Codex session
             Amara.InspectableSurface(surfaceView: workspace.codexSurface)
                 .surfaceVisible(workspace.activeTab == .codex)
+
+            // Workflow panel
+            if workspace.activeTab == .workflow {
+                WorkflowLibraryView(worktreePath: workspace.path)
+                    .environmentObject(manager)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
 
             // File editor tabs
             ForEach(workspace.fileTabs, id: \.self) { url in
