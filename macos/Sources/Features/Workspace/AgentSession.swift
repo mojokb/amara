@@ -42,6 +42,8 @@ final class AgentSession: ObservableObject {
     private var readSource: DispatchSourceRead?
     private var idleTimer: Timer?
     private let idleThreshold: TimeInterval = 2.5
+    // Accumulates bytes until a complete UTF-8 sequence is available.
+    private var pendingBytes: [UInt8] = []
 
     init(ghosttyApp: ghostty_app_t, command: String, workingDirectory: String) {
         let fifoPath = "/tmp/amara-\(UUID().uuidString)"
@@ -50,7 +52,11 @@ final class AgentSession: ObservableObject {
 
         var config = Amara.SurfaceConfiguration()
         config.workingDirectory = workingDirectory
-        config.command = "/bin/bash -c '\(command) 2>&1 | tee \(fifoPath)'"
+        // `script -q` wraps the agent in an inner PTY so `isatty(stdout)` returns
+        // true inside the agent process. Without this, piping through `tee` makes
+        // claude/codex detect a non-TTY and switch to --print mode.
+        // The typescript (a copy of all output) is written to our FIFO in real-time.
+        config.command = "/usr/bin/script -q \(fifoPath) \(command)"
         self.surface = Amara.SurfaceView(ghosttyApp, baseConfig: config)
 
         openFIFO()
@@ -101,8 +107,26 @@ final class AgentSession: ObservableObject {
         var buf = [UInt8](repeating: 0, count: 8192)
         let n = Darwin.read(fd, &buf, buf.count)
         guard n > 0 else { return }
-        let chunk = String(bytes: buf.prefix(n), encoding: .utf8) ?? ""
-        handleOutput(chunk)
+        pendingBytes.append(contentsOf: buf.prefix(n))
+
+        // Try to decode the full pending buffer as UTF-8.
+        if let str = String(bytes: pendingBytes, encoding: .utf8) {
+            pendingBytes = []
+            handleOutput(str)
+            return
+        }
+        // The last 1-3 bytes may be an incomplete multi-byte sequence (e.g. Korean = 3 bytes).
+        // Decode everything up to the last complete sequence and keep the remainder.
+        for keep in 1...min(3, pendingBytes.count - 1) {
+            let head = Array(pendingBytes.dropLast(keep))
+            if let str = String(bytes: head, encoding: .utf8) {
+                pendingBytes = Array(pendingBytes.suffix(keep))
+                handleOutput(str)
+                return
+            }
+        }
+        // Guard against unbounded growth on truly broken input.
+        if pendingBytes.count > 16_384 { pendingBytes = [] }
     }
 
     private func handleOutput(_ chunk: String) {

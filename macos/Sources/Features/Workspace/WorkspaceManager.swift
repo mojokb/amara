@@ -40,6 +40,25 @@ final class WorkspaceManager: ObservableObject {
     @Published private(set) var routes: [AgentRoute] = []
     private var routeCancellables: [UUID: AnyCancellable] = [:]
 
+    // MARK: - Workflow runners
+
+    @Published private(set) var runners: [String: WorkflowRunner] = [:]
+
+    func runWorkflow(_ graph: WorkflowGraph, prompt: String = "", inPath path: String) {
+        stopWorkflow(inPath: path)
+        guard let workspace = workspaces[path] else { return }
+        let runner = WorkflowRunner(graph: graph, workspace: workspace)
+        runners[path] = runner
+        runner.start(prompt: prompt)
+    }
+
+    func stopWorkflow(inPath path: String) {
+        runners[path]?.stop()
+        runners.removeValue(forKey: path)
+    }
+
+    func runner(for path: String) -> WorkflowRunner? { runners[path] }
+
     init(ghostty: Amara.App) {
         self.ghostty = ghostty
         // Forward worktreeProvider changes so SwiftUI views using this manager re-render.

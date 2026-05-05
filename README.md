@@ -18,7 +18,7 @@
 
 ## Overview
 
-Amara is purpose-built for agentic development workflows where multiple AI coding agents run in parallel, each on its own `git worktree`. Instead of juggling terminal windows and branches manually, Amara gives every worktree its own isolated workspace — with claude, codex, and a shell always running in the background.
+**Amara** takes its name from the *Wu* — the immortal servant — in [3×3 Eyes](https://en.wikipedia.org/wiki/3%C3%973_Eyes) by Yuzo Takada. A Wu exists to serve, never tires, and cannot be stopped. In that spirit, Amara is a tireless workspace for agentic development: multiple AI coding agents running in parallel, each on its own `git worktree`, always alive in the background — no juggling terminal windows or branches manually.
 
 Built on [libghostty](https://github.com/ghostty-org/ghostty) for high-performance terminal rendering.
 
@@ -29,6 +29,11 @@ Built on [libghostty](https://github.com/ghostty-org/ghostty) for high-performan
 - Select a worktree to open its workspace; background sessions keep running
 - Create new worktrees directly from the UI (`+` button)
 - File browser per worktree with git status indicators (`M` / `A` / `D` / `U` / `R`)
+
+### Agent Setup
+- Startup dialog confirms claude and codex are detected before entering the workspace
+- Checks Homebrew, Volta, nvm, asdf, and common npm global paths — instant, no shell spawn
+- Missing agents block entry; install hints provided with retry option
 
 ### Agent Sessions
 - **claude** and **codex** tabs per worktree, each with a dedicated persistent PTY

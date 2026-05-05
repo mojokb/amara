@@ -1,6 +1,6 @@
 import Foundation
 
-enum AgentKind: String, Hashable, CaseIterable {
+enum AgentKind: String, Hashable, CaseIterable, Codable {
     case claude, codex
 
     var label: String { rawValue.capitalized }

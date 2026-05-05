@@ -42,6 +42,10 @@ final class WorktreeWorkspace: ObservableObject {
     /// Which tab is currently active in the right panel.
     @Published var activeTab: WorkspaceTab = .claude
 
+    func session(for kind: AgentKind) -> AgentSession {
+        kind == .claude ? claudeSession : codexSession
+    }
+
     private let ghosttyApp: ghostty_app_t
     private var cancellables: Set<AnyCancellable> = []
     private var fileSurfaceCancellables: [URL: AnyCancellable] = [:]
@@ -134,9 +138,10 @@ final class WorktreeWorkspace: ObservableObject {
             .sink { [weak self] tab in
                 guard let self else { return }
                 switch tab {
-                case .claude: self.claudeSession.clearAttention()
-                case .codex:  self.codexSession.clearAttention()
-                case .file:   break
+                case .claude:    self.claudeSession.clearAttention()
+                case .codex:     self.codexSession.clearAttention()
+                case .workflow:  break
+                case .file:      break
                 }
             }
             .store(in: &cancellables)
