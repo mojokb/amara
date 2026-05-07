@@ -18,7 +18,7 @@
 
 ## Overview
 
-Amara is purpose-built for agentic development workflows where multiple AI coding agents run in parallel, each on its own `git worktree` — named after Wu (無界), the tireless shape-shifting demon from *3×3 Eyes* who executes without rest across every realm she's sent into. Instead of juggling terminal windows and branches manually, Amara gives every worktree its own isolated workspace with claude, codex, and a shell always running in the background: multiple agents, each independent in its own branch, always alive until the work is done.
+Amara is purpose-built for agentic development workflows where multiple AI coding agents run in parallel, each on its own `git worktree` — named after Wu (無界), the undying sole servant of the Sanjiyan from *3×3 Eyes*, who toils ceaselessly at her master's side. Just as Wu wields demon servants without rest, Amara keeps claude, codex, and a shell always running in the background across every worktree: each agent independent in its own branch, coding without pause until the work is done.
 
 Built on [libghostty](https://github.com/ghostty-org/ghostty) for high-performance terminal rendering.
 
