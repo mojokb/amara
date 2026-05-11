@@ -66,6 +66,11 @@ final class AgentSession: ObservableObject {
         var config = Amara.SurfaceConfiguration()
         config.workingDirectory = workingDirectory
         config.command = command
+        // Prepend the binary's own directory to PATH so that shebang-based tools
+        // (e.g. codex uses #!/usr/bin/env node) can find their runtime sibling binaries.
+        let binDir = URL(fileURLWithPath: command).deletingLastPathComponent().path
+        let basePath = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/local/bin"
+        config.environmentVariables["PATH"] = "\(binDir):\(basePath)"
         return Amara.SurfaceView(ghosttyApp, baseConfig: config)
     }
 }

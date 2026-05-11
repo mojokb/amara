@@ -241,4 +241,5 @@ final class WorkspaceManager: ObservableObject {
                           userInfo: [NSLocalizedDescriptionKey: msg.trimmingCharacters(in: .whitespacesAndNewlines)])
         }
     }
+
 }

@@ -142,6 +142,8 @@ struct WorktreeFileBrowser: View {
         // Don't intercept while renaming — TextField handles its own keys
         if renamingPath != nil { return event }
         guard controller.selectedPath != nil else { return event }
+        // Don't intercept when a terminal surface (ghostty) has keyboard focus
+        if NSApp.keyWindow?.firstResponder is Amara.SurfaceView { return event }
 
         let cmd   = event.modifierFlags.contains(.command)
         let key   = event.keyCode
