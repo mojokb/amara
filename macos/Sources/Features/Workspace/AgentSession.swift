@@ -6,9 +6,9 @@ import AmaraKit
 final class AgentSession: ObservableObject {
 
     /// The ghostty surface that renders this agent's terminal.
-    let surface: Amara.SurfaceView
+    /// Replaced with a fresh surface on each manual restart.
+    @Published private(set) var surface: Amara.SurfaceView
 
-    /// Placeholder — output monitoring is not yet implemented.
     @Published private(set) var needsAttention: Bool = false
     @Published private(set) var lastMessage: String?
     @Published private(set) var outputBuffer: String = ""
@@ -21,11 +21,19 @@ final class AgentSession: ObservableObject {
         PassthroughSubject<String, Never>().eraseToAnyPublisher()
     }
 
+    var isExited: Bool { surface.childExitedMessage != nil }
+
+    private let ghosttyApp: ghostty_app_t
+    private let command: String
+    private let workingDirectory: String
+    private var surfaceObservation: AnyCancellable?
+
     init(ghosttyApp: ghostty_app_t, command: String, workingDirectory: String) {
-        var config = Amara.SurfaceConfiguration()
-        config.workingDirectory = workingDirectory
-        config.command = command
-        self.surface = Amara.SurfaceView(ghosttyApp, baseConfig: config)
+        self.ghosttyApp = ghosttyApp
+        self.command = command
+        self.workingDirectory = workingDirectory
+        self.surface = Self.makeSurface(ghosttyApp: ghosttyApp, command: command, workingDirectory: workingDirectory)
+        observeSurface()
     }
 
     // MARK: - Input
@@ -40,5 +48,24 @@ final class AgentSession: ObservableObject {
     func clearAttention() {
         needsAttention = false
         lastMessage = nil
+    }
+
+    // MARK: - Restart
+
+    func restart() {
+        surface = Self.makeSurface(ghosttyApp: ghosttyApp, command: command, workingDirectory: workingDirectory)
+        observeSurface()
+    }
+
+    private func observeSurface() {
+        surfaceObservation = surface.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+    }
+
+    private static func makeSurface(ghosttyApp: ghostty_app_t, command: String, workingDirectory: String) -> Amara.SurfaceView {
+        var config = Amara.SurfaceConfiguration()
+        config.workingDirectory = workingDirectory
+        config.command = command
+        return Amara.SurfaceView(ghosttyApp, baseConfig: config)
     }
 }

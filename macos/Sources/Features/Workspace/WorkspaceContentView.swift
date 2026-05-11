@@ -36,11 +36,14 @@ struct WorkspaceContentView: View {
     private var agentPanel: some View {
         ZStack {
             // Claude session — always in hierarchy, invisible when not active
+            // .id forces SwiftUI to recreate the view when the surface is replaced on restart
             Amara.InspectableSurface(surfaceView: workspace.claudeSurface)
+                .id(ObjectIdentifier(workspace.claudeSurface))
                 .surfaceVisible(workspace.activeTab == .claude)
 
             // Codex session
             Amara.InspectableSurface(surfaceView: workspace.codexSurface)
+                .id(ObjectIdentifier(workspace.codexSurface))
                 .surfaceVisible(workspace.activeTab == .codex)
 
             // File editor tabs
@@ -100,6 +103,23 @@ struct WorkspaceContentView: View {
             // Agent log popover — only on agent tabs
             if let session = activeAgentSession {
                 let tabName = workspace.activeTab == .claude ? "Claude" : "Codex"
+
+                // New Session button — shown when the process has exited
+                if session.isExited {
+                    Button {
+                        session.restart()
+                    } label: {
+                        Label("New Session", systemImage: "arrow.counterclockwise")
+                            .font(.system(size: 11))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(.regularMaterial, in: Capsule())
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Start a new \(tabName) session")
+                }
+
                 Button {
                     showingLog.toggle()
                 } label: {
