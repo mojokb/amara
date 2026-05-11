@@ -5,9 +5,12 @@ import SwiftUI
 struct WorkspaceTabBar: View {
     @Binding var activeTab: WorkspaceTab
     let fileTabs: [URL]
+    let webTabs: [UUID]
+    let webTabStates: [UUID: WebTabState]
     let claudeNeedsAttention: Bool
     let codexNeedsAttention: Bool
     let onClose: (URL) -> Void
+    let onCloseWeb: (UUID) -> Void
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -23,6 +26,18 @@ struct WorkspaceTabBar: View {
 
                 ForEach(fileTabs, id: \.self) { url in
                     fileTab(url: url)
+                }
+
+                if !webTabs.isEmpty {
+                    Divider()
+                        .frame(height: 18)
+                        .padding(.horizontal, 4)
+                }
+
+                ForEach(webTabs, id: \.self) { id in
+                    if let state = webTabStates[id] {
+                        webTab(state: state)
+                    }
                 }
             }
             .padding(.horizontal, 4)
@@ -65,6 +80,41 @@ struct WorkspaceTabBar: View {
         .buttonStyle(.plain)
     }
 
+    private func webTab(state: WebTabState) -> some View {
+        let isActive = activeTab == .web(state.id)
+        return HStack(spacing: 4) {
+            Image(systemName: "globe")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+
+            ObservingText(state: state)
+                .font(.callout)
+                .foregroundStyle(isActive ? .primary : .secondary)
+                .lineLimit(1)
+                .frame(maxWidth: 120)
+
+            Button {
+                onCloseWeb(state.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 36)
+        .background(alignment: .bottom) {
+            if isActive {
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(height: 2)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { activeTab = .web(state.id) }
+    }
+
     private func fileTab(url: URL) -> some View {
         let isActive = activeTab == .file(url)
         return HStack(spacing: 6) {
@@ -94,4 +144,10 @@ struct WorkspaceTabBar: View {
         .contentShape(Rectangle())
         .onTapGesture { activeTab = .file(url) }
     }
+}
+
+// Tiny view so @ObservedObject can track WebTabState.title changes.
+private struct ObservingText: View {
+    @ObservedObject var state: WebTabState
+    var body: some View { Text(state.title) }
 }

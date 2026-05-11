@@ -734,6 +734,13 @@ extension Amara {
                 break
             }
 
+            // http/https → open in workspace web tab instead of external browser
+            if (url.scheme == "http" || url.scheme == "https"),
+               let manager = WorkspaceManager.active {
+                DispatchQueue.main.async { manager.openWebTab(url) }
+                return true
+            }
+
             // Open with the default application for the URL
             NSWorkspace.shared.open(url)
             return true

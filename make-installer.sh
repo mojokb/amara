@@ -135,9 +135,38 @@ echo "▶ Stapling notarization ticket…"
 xcrun stapler staple "$DMG_PATH"
 xcrun stapler validate "$DMG_PATH"
 
-# ── 10. Summary ───────────────────────────────────────────────────────────────
+# ── 10. GitHub Release ───────────────────────────────────────────────────────
+TAG="v${VERSION}"
+echo "▶ Creating GitHub release ${TAG}..."
+
+# Collect commits since the previous tag for release notes
+PREV_TAG=$(git tag --sort=-version:refname | grep -v "^$TAG$" | head -1)
+if [ -n "$PREV_TAG" ]; then
+    NOTES=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges)
+else
+    NOTES=$(git log --pretty=format:"- %s" --no-merges | head -20)
+fi
+
+# Create tag if it doesn't exist
+if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+    git tag -a "$TAG" -m "Release $TAG"
+    git push origin "$TAG"
+fi
+
+# Create (or update) the GitHub release and upload the DMG
+gh release create "$TAG" "$DMG_PATH" \
+    --title "$APP_NAME $TAG" \
+    --notes "${NOTES:-No changelog available.}" \
+    --repo mojokb/amara \
+    2>/dev/null || \
+gh release upload "$TAG" "$DMG_PATH" \
+    --repo mojokb/amara \
+    --clobber
+
+# ── 11. Summary ───────────────────────────────────────────────────────────────
 SIZE=$(du -sh "$DMG_PATH" | cut -f1)
+RELEASE_URL=$(gh release view "$TAG" --repo mojokb/amara --json url -q .url 2>/dev/null || echo "https://github.com/mojokb/amara/releases/tag/$TAG")
 echo ""
 echo "✓ Done: $DMG_PATH ($SIZE)"
-echo "  Notarized and ready for distribution."
-echo "  To install: open the DMG and drag $APP_NAME to Applications."
+echo "  Notarized and published to GitHub."
+echo "  Release: $RELEASE_URL"

@@ -40,8 +40,14 @@ final class WorkspaceManager: ObservableObject {
     @Published private(set) var routes: [AgentRoute] = []
     private var routeCancellables: [UUID: AnyCancellable] = [:]
 
+    // MARK: - Global registration (used by Ghostty.App for URL interception)
+
+    /// The most recently created WorkspaceManager. Used for URL routing from the terminal.
+    nonisolated(unsafe) private(set) static weak var active: WorkspaceManager?
+
     init(ghostty: Amara.App) {
         self.ghostty = ghostty
+        WorkspaceManager.active = self
         // Forward worktreeProvider changes so SwiftUI views using this manager re-render.
         providerCancellable = worktreeProvider.objectWillChange
             .receive(on: RunLoop.main)
@@ -98,6 +104,13 @@ final class WorkspaceManager: ObservableObject {
         }
         workspaces[worktreePath]?.openFile(url)
         selectedPath = worktreePath
+    }
+
+    // MARK: - Web browser
+
+    func openWebTab(_ url: URL) {
+        guard let path = selectedPath else { return }
+        workspaces[path]?.openWebTab(url)
     }
 
     // MARK: - Repository

@@ -39,6 +39,12 @@ final class WorktreeWorkspace: ObservableObject {
     /// For markdown files: true = viewer, false = vim editor. Defaults to viewer.
     @Published var markdownViewModes: [URL: Bool] = [:]
 
+    /// Ordered list of open web tab IDs.
+    @Published var webTabs: [UUID] = []
+
+    /// WebKit state per open web tab.
+    @Published var webTabStates: [UUID: WebTabState] = [:]
+
     /// Which tab is currently active in the right panel.
     @Published var activeTab: WorkspaceTab = .claude
 
@@ -93,6 +99,30 @@ final class WorktreeWorkspace: ObservableObject {
             .sink { [weak self] _ in self?.removeFileTab(url) }
     }
 
+    // MARK: - Web browser
+
+    func openWebTab(_ url: URL) {
+        // Reuse existing tab if the same URL is already open (by initial URL).
+        if let existing = webTabStates.first(where: { $0.value.url == url }) {
+            activeTab = .web(existing.key)
+            return
+        }
+        let state = WebTabState(url: url)
+        webTabs.append(state.id)
+        webTabStates[state.id] = state
+        activeTab = .web(state.id)
+    }
+
+    func closeWebTab(_ id: UUID) {
+        webTabs.removeAll { $0 == id }
+        webTabStates.removeValue(forKey: id)
+        if activeTab == .web(id) {
+            activeTab = webTabs.last.map { .web($0) }
+                ?? fileTabs.last.map { .file($0) }
+                ?? .claude
+        }
+    }
+
     func closeFile(_ url: URL) {
         if let model = fileSurfaces[url]?.surfaceModel {
             Task { @MainActor in model.sendText(":q!\n") }
@@ -137,6 +167,7 @@ final class WorktreeWorkspace: ObservableObject {
                 case .claude: self.claudeSession.clearAttention()
                 case .codex:  self.codexSession.clearAttention()
                 case .file:   break
+                case .web:    break
                 }
             }
             .store(in: &cancellables)

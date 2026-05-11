@@ -16,9 +16,12 @@ struct WorkspaceContentView: View {
             WorkspaceTabBar(
                 activeTab: $workspace.activeTab,
                 fileTabs: workspace.fileTabs,
+                webTabs: workspace.webTabs,
+                webTabStates: workspace.webTabStates,
                 claudeNeedsAttention: workspace.claudeNeedsAttention,
                 codexNeedsAttention: workspace.codexNeedsAttention,
-                onClose: closeFile
+                onClose: closeFile,
+                onCloseWeb: { workspace.closeWebTab($0) }
             )
 
             VSplitView {
@@ -56,6 +59,17 @@ struct WorkspaceContentView: View {
                             .allowsHitTesting(isActive && viewing)
                             .accessibilityHidden(!(isActive && viewing))
                     }
+                }
+            }
+
+            // Web browser tabs
+            ForEach(workspace.webTabs, id: \.self) { id in
+                if let state = workspace.webTabStates[id] {
+                    let isActive = workspace.activeTab == .web(id)
+                    WebBrowserView(state: state)
+                        .opacity(isActive ? 1 : 0)
+                        .allowsHitTesting(isActive)
+                        .accessibilityHidden(!isActive)
                 }
             }
         }
@@ -107,6 +121,20 @@ struct WorkspaceContentView: View {
             // Route menu — only on agent tabs
             if workspace.activeTab == .claude || workspace.activeTab == .codex {
                 routeMenuButton
+            }
+
+            // Reload button — only on web tabs
+            if case .web(let id) = workspace.activeTab,
+               let state = workspace.webTabStates[id] {
+                Button { state.webView.reload() } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(.regularMaterial, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Reload page")
             }
 
             // Markdown toggle — only for .md file tabs

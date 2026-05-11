@@ -128,6 +128,154 @@ claudeSession.onOutput { chunk in
 
 ---
 
+---
+
+## Planned 0.2.0: Task + Daily TODO
+
+### 배경
+
+git worktree가 **물리적 태스크 분리**(브랜치별 격리)라면, 0.3.0은 **논리적 태스크 관리** 레이어를 추가한다.
+Kanban 보드 형태를 검토했으나, Amara의 실제 사용 패턴(1인 또는 소수, 3~5개 동시 워크트리)에는 과도한 UI임을 확인.
+대신 "오늘 할 일 → 에이전트에 위임 → 모니터링 → 완료" 흐름을 하나의 데이터 모델로 통합한다.
+
+### 데이터 모델
+
+```swift
+struct AmaraTask: Identifiable, Codable {
+    let id: UUID
+    var title: String
+    var status: Status          // todo | inProgress | review | done
+    var assignee: Assignee      // .me | .claude | .codex
+    var worktreePath: String?   // 에이전트 할당 시 연결
+    var branch: String?
+    var prNumber: Int?
+    var date: Date              // 오늘 필터링용
+
+    enum Status: String, Codable { case todo, inProgress, review, done }
+    enum Assignee: String, Codable { case me, claude, codex }
+}
+```
+
+저장 위치: `<repositoryPath>/.amara/tasks.json`
+
+### 사용 흐름
+
+```
+아침: Amara에서 오늘 할 일 입력
+  "결제 API 리팩터"  [→ claude]   ← 클릭 시 worktree + 에이전트 자동 시작
+  "로그인 버그 픽스" [→ codex]
+  "팀 미팅 준비"     (직접 할 것)
+
+오후: 사이드바에서 에이전트 상태 모니터링
+  ● feature/payment   결제 API 리팩터   claude 실행 중
+  ● feature/fix-login 로그인 버그 픽스  주의 필요
+
+PR 머지 감지 → 연결 태스크 자동 done
+```
+
+### 구현 범위
+
+| 파일 | 작업 |
+|------|------|
+| `AmaraTask.swift` | 신규 — 태스크 데이터 모델 |
+| `TaskStore.swift` | 신규 — CRUD + JSON 영속성 + 생명주기 훅 |
+| `DailyTodoView.swift` | 신규 — 오늘 할 일 목록 + [→ agent] 버튼 |
+| `WorkspaceManager.swift` | 수정 — TaskStore 소유, createWorktree/handlePRMerged 훅 연동 |
+| `WorkspaceRootView.swift` | 수정 — Today 뷰 토글 진입점 |
+| `WorktreeListView.swift` | 수정 — 워크트리 행에 태스크 제목 + 상태 dot 표시 |
+
+### 생명주기 자동화
+
+- `createWorktree(branch:)` → 태스크 자동 생성 및 link
+- `select(path:)` → 연결 태스크 todo → inProgress 자동 전환
+- `handlePRMerged(_:)` → 연결 태스크 → done 자동 전환 (기존 Gitea 훅 활용)
+
+### 경쟁 도구 대비 차별점
+
+conductor.build, claude-squad 모두 "에이전트 실행" 레이어만 있고 계획(planning) 레이어가 없다.
+이 피처로 Amara는 **계획 → 위임 → 모니터링 → 완료**의 전체 사이클을 단일 앱에서 제공한다.
+
+---
+
+## Planned 0.2.0: Context Agent
+
+### 배경
+
+프로젝트를 진행하는 동안 축적되는 비정형 정보(프로젝트 개요, 고객 메일, 회의 transcription 등)를
+에이전트에게 위임하기 전에 개발자가 직접 찾아봐야 하는 비효율이 존재한다.
+Context Agent는 이 정보를 레포지토리 수준에서 인덱싱하고 채팅 인터페이스로 조회할 수 있게 한다.
+
+### 문서 구조
+
+```
+<repo>/
+└── .amara/
+    └── context/              ← 여기에 파일을 넣으면 자동 인식
+        ├── project.md        (프로젝트 개요)
+        ├── emails/           (고객 메일 .md/.txt)
+        └── meetings/         (회의 transcription .md/.txt)
+```
+
+파일 변경을 감지(`DispatchSource` 또는 `FSEventStream`)하여 자동 재인덱스.
+
+### 아키텍처
+
+```swift
+ContextSession (ObservableObject, 레포 수준 싱글턴)
+├── documents: [ContextDocument]   // .amara/context/ 스캔 결과
+├── messages: [ChatMessage]        // 대화 히스토리
+├── ask(_ question: String)        // Claude API 스트리밍 호출
+│     system prompt = 인덱싱된 문서 전체
+│     user = 질문
+└── watchDocuments()               // FSEventStream으로 파일 변경 감지
+
+ContextDocument
+├── path: String
+├── title: String                  // 파일명 or 첫 번째 H1
+├── content: String
+└── kind: .projectDoc | .email | .meeting | .other
+```
+
+검색 방식: 문서 전체를 system prompt에 주입 (프로젝트 단위 소규모 문서에 적합).
+문서가 많아지면 청크 기반 RAG로 전환 가능하도록 `ContextSession` 내부에 캡슐화.
+
+### UI 배치
+
+좌측 패널 상단 토글로 세 뷰를 전환:
+
+```
+[⎇ Worktrees]  [☐ Today]  [◎ Context]
+```
+
+`ContextAgentView` — 채팅 인터페이스:
+- 상단: 인덱싱된 문서 목록 (접이식)
+- 중단: 대화 히스토리 (스트리밍 응답)
+- 하단: 입력창 + 전송 버튼
+- 답변 내 파일 참조 → 클릭 시 해당 파일 탭으로 열기
+
+### 구현 범위
+
+| 파일 | 작업 |
+|------|------|
+| `ContextDocument.swift` | 신규 — 문서 데이터 모델 + kind 분류 |
+| `ContextSession.swift` | 신규 — 문서 스캔·인덱싱, Claude API 호출, 대화 관리 |
+| `ContextAgentView.swift` | 신규 — 채팅 UI (스트리밍 응답, 문서 목록 패널) |
+| `WorkspaceManager.swift` | 수정 — ContextSession 소유 (레포 경로 변경 시 재초기화) |
+| `WorkspaceRootView.swift` | 수정 — 좌측 패널 토글에 Context 탭 추가 |
+| `SettingsView.swift` | 수정 — Anthropic API 키 입력란 추가 |
+
+### 사용 흐름
+
+```
+1. .amara/context/meetings/2026-05-11.md 파일 추가
+2. Amara 자동 감지 → ContextSession 재인덱스
+3. 사용자: "지난 미팅에서 결제 API 관련 결정사항이 뭐였어?"
+4. Claude API → 관련 문서 기반 답변 스트리밍
+5. 답변 내 언급된 파일 참조 클릭 → 파일 탭으로 열기
+```
+
+---
+
 ## File Index
 
 | 파일 | 역할 |
